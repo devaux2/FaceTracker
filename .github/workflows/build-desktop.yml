@@ -1,0 +1,61 @@
+name: Build desktop app
+
+# Builds the double-click installers and publishes them to the repo's
+# Releases page (tag: desktop-latest). Runs automatically when the app code
+# changes, and can be run manually from the Actions tab.
+on:
+  push:
+    branches: ["claude/festive-einstein-4v9adc"]
+    paths-ignore: ["README.md", ".gitignore"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: FaceTracker-Windows
+          - os: macos-latest
+            artifact: FaceTracker-macOS
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Bundle the face engine (offline)
+        run: npm run vendor:mediapipe
+
+      - name: Build installer
+        run: npx electron-builder --publish never
+
+      - name: Upload build as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+          if-no-files-found: ignore
+
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          name: FaceTracker — desktop app (latest)
+          prerelease: true
+          files: |
+            release/*.exe
+            release/*.dmg
