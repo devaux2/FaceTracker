@@ -256,6 +256,8 @@ function renderDisplay() {
     duo,
     field(`Max faces (${s.numFaces})`, slider(s.numFaces, 1, 10, 1, (v) => patchSettings({ numFaces: Math.round(v) }))),
     field(`Smoothing (${Math.round(s.smoothing * 100)}%)`, slider(s.smoothing, 0, 0.95, 0.05, (v) => patchSettings({ smoothing: v }))),
+    el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.occlusion !== false, onchange: (e) => patchSettings({ occlusion: e.target.checked }) }), 'Occlusion — hide the far side when the head turns']),
+    field(`Edge blend (${Math.round((s.edgeFeather ?? 0.6) * 100)}%)`, slider(s.edgeFeather ?? 0.6, 0, 1, 0.05, (v) => patchSettings({ edgeFeather: v }))),
     field('Detector', el('select', { onchange: (e) => patchSettings({ detectorDelegate: e.target.value }) }, ['GPU', 'CPU'].map((d) => el('option', { value: d, selected: s.detectorDelegate === d }, d)))),
     field('Background', el('input', { type: 'color', value: s.bgColor, oninput: (e) => patchSettings({ bgColor: e.target.value }) })),
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.showFps, onchange: (e) => patchSettings({ showFps: e.target.checked }) }), 'Show FPS / face count on display']),

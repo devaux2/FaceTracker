@@ -64,7 +64,9 @@ export const DEFAULT_SETTINGS = {
   paintMode: 'single', // 'single' (activePaintId) | 'randomPerFace' (enabled set)
   activePaintId: null,
   enabledPaintIds: [], // used in randomPerFace mode (empty = all paints)
-  smoothing: 0.5, // 0 = raw landmarks, →1 = heavy temporal smoothing
+  smoothing: 0.6, // 0 = raw landmarks, →1 = heavy temporal smoothing (One-Euro)
+  occlusion: true, // hide the far side of the face when the head turns (depth + backface cull)
+  edgeFeather: 0.6, // 0 = hard edge, 1 = soft fade into the skin at the paint's edge
   showFps: false,
   meshDebug: false, // draw wireframe instead of texture
   bgColor: '#000000', // shown when no camera / letterboxing

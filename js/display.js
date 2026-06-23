@@ -186,7 +186,7 @@ function frame() {
     } catch (e) {
       console.error('detect error', e);
     }
-    const active = tracks.update(result ? result.faceLandmarks : []);
+    const active = tracks.update(result ? result.faceLandmarks : [], ts);
 
     // Drop paint assignments for faces that are gone.
     if (paintAssign.size) {
@@ -202,6 +202,8 @@ function frame() {
       opacity: settings.paintOpacity,
       stickers,
       meshDebug: settings.meshDebug,
+      occlusion: settings.occlusion !== false,
+      edgeFeather: settings.edgeFeather ?? 0.6,
     });
 
     // FPS
