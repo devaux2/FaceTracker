@@ -13,7 +13,6 @@ import { STICKER_ANCHORS, LM } from './config.js';
 // Depth scale applied to MediaPipe's z (roughly same scale as x). Only relative
 // ordering matters; clamped to stay in clip range.
 const Z_SCALE = 2.5;
-const FEATHER_RINGS = 6; // how many mesh rings in from the silhouette to fade
 
 const VERT_TEX = `
 attribute vec3 a_pos;
@@ -36,7 +35,10 @@ uniform float u_alpha;
 uniform float u_feather; // 0 = hard edge, 1 = full feather
 void main() {
   vec4 c = texture2D(u_tex, v_uv);
-  float fade = mix(1.0, v_edge, u_feather);
+  // v_edge: 0 at the paint's silhouette -> 1 at the centre. u_feather controls
+  // how far the soft band reaches in (0 = hard edge, 1 = gradient across the
+  // whole face), giving a solid middle with a tunable soft edge.
+  float fade = smoothstep(0.0, max(u_feather, 0.001), v_edge);
   gl_FragColor = vec4(c.rgb, c.a * u_alpha * fade);
 }`;
 
@@ -109,8 +111,9 @@ function buildEdges() {
   return new Uint16Array(edges);
 }
 
-// Per-vertex feather weight: 0 on the mesh silhouette, ramping to 1 over
-// FEATHER_RINGS rings inward (graph distance from the boundary loop).
+// Per-vertex feather weight: 0 on the mesh silhouette, 1 at the deepest interior
+// point (normalized graph distance from the boundary loop). The shader turns
+// this into a controllable soft-edge gradient.
 function buildEdgeWeights() {
   const edgeUse = new Map();
   const adj = Array.from({ length: LANDMARK_COUNT }, () => new Set());
@@ -138,10 +141,12 @@ function buildEdgeWeights() {
     const v = queue[qi];
     for (const n of adj[v]) if (dist[n] === -1) { dist[n] = dist[v] + 1; queue.push(n); }
   }
+  let maxD = 1;
+  for (let i = 0; i < LANDMARK_COUNT; i++) if (dist[i] > maxD) maxD = dist[i];
   const w = new Float32Array(LANDMARK_COUNT);
   for (let i = 0; i < LANDMARK_COUNT; i++) {
-    const d = dist[i] < 0 ? FEATHER_RINGS : dist[i];
-    w[i] = Math.min(1, d / FEATHER_RINGS);
+    const d = dist[i] < 0 ? maxD : dist[i];
+    w[i] = d / maxD;
   }
   return w;
 }
