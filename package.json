@@ -1,0 +1,53 @@
+{
+  "name": "facetracker",
+  "version": "1.0.0",
+  "description": "Live webcam face-paint mapping for installations and photo booths.",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:dir": "electron-builder --dir",
+    "vendor:mediapipe": "node scripts/vendor-mediapipe.cjs"
+  },
+  "author": "Paradox State",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^32.1.2",
+    "electron-builder": "^25.0.5",
+    "@mediapipe/tasks-vision": "0.10.15"
+  },
+  "build": {
+    "appId": "co.paradoxstate.facetracker",
+    "productName": "FaceTracker",
+    "files": [
+      "index.html",
+      "control.html",
+      "display.html",
+      "css/**/*",
+      "js/**/*",
+      "assets/**/*",
+      "electron/**/*",
+      "vendor/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "target": ["dmg", "zip"],
+      "extendInfo": {
+        "NSCameraUsageDescription": "FaceTracker uses the camera to map face paint onto faces in the live video.",
+        "NSMicrophoneUsageDescription": "Not used."
+      }
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Graphics"
+    }
+  }
+}

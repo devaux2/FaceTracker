@@ -2,24 +2,34 @@
 // Everything tunable lives here so the rest of the app stays declarative.
 
 // ---------------------------------------------------------------------------
-// MediaPipe (loaded at runtime from a CDN by default).
-// To run fully offline, download these into /vendor and point the paths there
-// (see README "Running offline").
+// MediaPipe face engine.
+// Loaded from a CDN by default. When running in the desktop (Electron) build
+// with assets vendored locally (npm run vendor:mediapipe), the preload sets
+// window.FT_CONFIG.mediapipeVendorBase and the app runs fully offline.
 // ---------------------------------------------------------------------------
-export const MEDIAPIPE = {
-  version: '0.10.15',
-  // ES-module bundle. The `+esm` form is the most reliable for buildless ESM.
-  get module() {
-    return `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${this.version}/+esm`;
-  },
-  // Directory that holds the wasm/loader files FilesetResolver fetches.
-  get wasm() {
-    return `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${this.version}/wasm`;
-  },
-  // The face landmark model (468 face + 10 iris landmarks). ~3.8 MB.
-  model:
-    'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-};
+const OVERRIDES = (typeof window !== 'undefined' && window.FT_CONFIG) || {};
+const MP_VERSION = '0.10.15';
+const MP_CDN = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
+
+export const MEDIAPIPE = OVERRIDES.mediapipeVendorBase
+  ? {
+      version: MP_VERSION,
+      module: `${OVERRIDES.mediapipeVendorBase}/tasks-vision/vision_bundle.mjs`,
+      wasm: `${OVERRIDES.mediapipeVendorBase}/tasks-vision/wasm`,
+      model: `${OVERRIDES.mediapipeVendorBase}/face_landmarker.task`,
+    }
+  : {
+      version: MP_VERSION,
+      // The `+esm` form is the most reliable for buildless ESM.
+      module: `${MP_CDN}/+esm`,
+      wasm: `${MP_CDN}/wasm`,
+      // Face landmark model (468 face + 10 iris landmarks). ~3.8 MB.
+      model:
+        'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+    };
+
+// True when running inside the Electron desktop build.
+export const IS_ELECTRON = !!OVERRIDES.electron;
 
 // Cross-window messaging (control panel <-> display, same browser/origin).
 export const CHANNEL_NAME = 'facetracker';

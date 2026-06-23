@@ -5,8 +5,10 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Optional offline-vendored MediaPipe assets (see README "Running offline")
+# Optional offline-vendored MediaPipe assets (npm run vendor:mediapipe)
 /vendor/
 
-# Node (only if you add tooling later)
+# Node / Electron build output
 node_modules/
+/release/
+/dist/
