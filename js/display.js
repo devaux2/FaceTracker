@@ -2,7 +2,7 @@
 // Webcam -> MediaPipe face mesh -> WebGL paint/sticker warp + DOM overlays.
 // Reacts live to control-panel changes over the BroadcastChannel.
 
-import { STORES, MSG, COLOR_FILTERS } from './config.js';
+import { STORES, MSG, COLOR_FILTERS, IS_ELECTRON } from './config.js';
 import { getAll, getSettings } from './store.js';
 import { createBus } from './bus.js';
 import { loadFaceLandmarker, FaceTracks } from './tracker.js';
@@ -295,3 +295,7 @@ window.addEventListener('keydown', (e) => {
 
 gate.querySelector('button').addEventListener('click', start);
 window.addEventListener('resize', () => renderer && fitCanvas());
+
+// In the desktop app, camera permission is auto-granted — start immediately so
+// the display comes up on its own for unattended / 24-7 installs.
+if (IS_ELECTRON) start();

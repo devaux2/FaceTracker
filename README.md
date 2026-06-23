@@ -5,58 +5,71 @@ mirror" experiences — like the `#SKELFIE` skull mirror. Point a camera at peop
 and FaceTracker maps an uploaded paint design onto every face in real time,
 following each face as it moves, plus text / image / **video** logo overlays.
 
-It runs as a **buildless, dependency-light web app** in Chrome:
+It has two surfaces:
 
-- **Control panel** (`control.html`) — your "CRM". Upload paints, stickers and
-  overlays, tune the look, and see whether the display is live. Use it on the
-  same laptop, or any browser window beside the display.
-- **Display** (`display.html`) — the 24/7 screen guests see. Webcam in, painted
-  faces out.
+- **Control panel** — your "CRM". Upload paints, stickers and overlays, tune the
+  look, and see whether the display is live.
+- **Display** — the 24/7 screen guests see. Webcam in, painted faces out.
 
-The two windows talk to each other automatically (same browser, same computer)
-over `BroadcastChannel`, and everything is stored locally in IndexedDB. **No
-backend, no build step, no account.**
+It ships as a **double-click desktop app** (recommended) and *also* runs as a
+plain web app. Everything is stored locally; **no backend, no account**.
 
 | | |
 |---|---|
-| Face tracking | MediaPipe **FaceLandmarker** (468-point mesh, up to 10 faces), loaded from CDN |
+| Face tracking | MediaPipe **FaceLandmarker** (468-point mesh, up to 10 faces) |
 | Rendering | WebGL mesh warp (898 triangles) + anchored sticker quads + DOM overlays |
 | Storage | IndexedDB (paints, stickers, overlays, settings) with JSON export/import |
 | Sync | `BroadcastChannel` (control ⇄ display), live |
+| Desktop shell | Electron (Chromium) — works offline, auto-fullscreen, kiosk-ready |
 
 ---
 
-## Quick start
+## Run it — desktop app (recommended)
 
-You need **Google Chrome**, a **webcam**, and (on first load) an **internet
-connection** so the face engine can download.
+This is the easy path for the person operating it: a normal app window, no
+terminal, no localhost, camera permission handled for you, and it can run
+**fully offline**.
 
-Serve the folder over `http://localhost` — the camera and live sync require a
-secure context, which `localhost` provides:
+**For the operator (after you've given them the built app):**
+Double-click **FaceTracker**. The control panel opens; click **Open Display** and
+the display fills the second screen (or press **F** to go full screen on one).
+That's it.
+
+**To build the app once (on a machine with Node 18+ installed):**
 
 ```bash
-# macOS / Linux
-./scripts/start.sh
+npm install                  # one time
+npm run vendor:mediapipe     # optional: bundle the face engine to run offline
+npm start                    # run it right now to try it
 
-# Windows
-scripts\start.bat
-
-# …or any static server, e.g.
-python3 -m http.server 8000
+npm run dist                 # build the installer: .dmg / .exe / AppImage
 ```
 
-Then:
+`npm run dist` produces an installer in `release/` for **the OS you run it on**
+(build on a Mac for `.dmg`, on Windows for `.exe`). Hand that single file to your
+client. (Want installers for all three OSes automatically? See *Building
+installers in CI* below.)
 
-1. Open **http://localhost:8000/control.html**.
-2. Click **Open Display ↗** (allow the camera). Press **F** for full screen.
-3. In the control panel → **Paints**, click **Download paint template**, paint
-   on it in any image editor, export a **transparent PNG**, and upload it.
+> First launch downloads the face engine unless you ran `vendor:mediapipe`.
+> After the first run it's cached, so internet isn't needed again. Unsigned apps
+> prompt once: macOS → right-click → **Open**; Windows → **More info → Run
+> anyway**.
 
-Changes in the control panel apply to the display instantly.
+## Run it — web app (no install)
 
-> Double-clicking the `.html` files (the `file://` protocol) is **not**
-> recommended — Chrome gives each `file://` page a separate origin, so the
-> control panel and display can't sync. Always use `localhost`.
+Serve the folder over `http://localhost` (the camera + live sync need a secure
+origin, which `localhost` provides — double-clicking the `.html` files won't
+work):
+
+```bash
+./scripts/start.sh         # macOS / Linux
+scripts\start.bat          # Windows
+python3 -m http.server 8000   # …or any static server
+```
+
+Open **http://localhost:8000/control.html**, click **Open Display ↗**, allow the
+camera, press **F**. In **Paints**, click **Add sample skull paint** to see it
+working immediately.
 
 ---
 
@@ -106,24 +119,29 @@ max faces (1–10) · smoothing · GPU/CPU detector · background colour · FPS 
 
 ## Kiosk / always-on mode
 
-Launch the display as a borderless, full-screen Chrome window pointed at the
-display URL:
+**Desktop app:** the display auto-starts (no "Start" click) and goes full screen
+on a second monitor automatically. To launch on boot, add the built app to your
+OS login items / startup folder.
+
+**Web app:** launch the display as a borderless full-screen Chrome window:
 
 ```bash
-# macOS
-open -na "Google Chrome" --args --kiosk --app="http://localhost:8000/display.html"
-
-# Windows
+# macOS / Windows / Linux (adjust the chrome command per OS)
 chrome --kiosk --app="http://localhost:8000/display.html"
-
-# Linux
-google-chrome --kiosk --app="http://localhost:8000/display.html"
 ```
 
-Useful extra flags for unattended installs:
+Extra flags for unattended web installs:
 `--noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required`.
-You'll still click **Start** once to grant camera access (Chrome remembers the
-permission for `localhost` afterwards).
+
+---
+
+## Building installers in CI (all OSes at once)
+
+Build for macOS, Windows and Linux from one push with GitHub Actions (a matrix
+running `npm ci && npm run vendor:mediapipe && npm run dist` on
+`macos-latest` / `windows-latest` / `ubuntu-latest`, uploading `release/*` as
+artifacts). Ask and I'll drop in the workflow. For shipping to clients without
+the "unidentified developer" prompt you'd add code-signing certs as repo secrets.
 
 ---
 
@@ -137,51 +155,53 @@ machine. Handy for building your kit on a laptop and deploying to the venue PC.
 
 ## Running fully offline
 
-By default the face engine is fetched from a CDN on first load (then browser-
-cached). For a venue without reliable internet, vendor the assets:
+In the **desktop app**, just run `npm run vendor:mediapipe` before building. It
+copies the MediaPipe engine and downloads the model into `vendor/`; the preload
+detects them and the app loads everything locally — no internet at runtime.
 
-1. Download MediaPipe `@mediapipe/tasks-vision` (the `wasm/` folder and the ESM
-   bundle) and the model file
-   `face_landmarker.task`
-   (`https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`)
-   into a `vendor/` folder.
-2. Point `js/config.js` → `MEDIAPIPE.module`, `MEDIAPIPE.wasm` and
-   `MEDIAPIPE.model` at the local `vendor/` paths.
-
-Everything else already runs locally.
+For the **web app**, do the same `vendor:mediapipe` step (or place the files in
+`vendor/` manually) and set `window.FT_CONFIG = { mediapipeVendorBase: '/vendor' }`
+before the scripts load. `js/config.js` already prefers the local copy when that
+is set.
 
 ---
 
 ## Project layout
 
 ```
-index.html / control.html / display.html   pages
+index.html / control.html / display.html   web pages (shared by web + desktop)
 css/app.css                                 styles
 js/
-  config.js          channel name, CDN/model URLs, defaults, landmark anchors
+  config.js          MediaPipe/CDN config (+ FT_CONFIG overrides), defaults, anchors
   facemesh-data.js   468 UV coords + 898 triangles (from MediaPipe canonical model)
   store.js           IndexedDB + export/import
   bus.js             BroadcastChannel sync + presence
   tracker.js         MediaPipe FaceLandmarker + multi-face tracking/smoothing
   renderer.js        WebGL mesh-warp + sticker compositor
   overlays.js        DOM text/image/video overlay layer
-  template.js        paint-template generator
+  template.js        paint-template + sample-paint generator
   display.js         display page wiring
   control.js         control panel wiring
-scripts/             one-command launchers (start.sh / .command / .bat)
+electron/
+  main.cjs           desktop shell: serves the app on loopback, opens windows
+  preload.cjs        exposes FT_CONFIG (electron flag + offline vendor base)
+  static-server.cjs  tiny static file server (also serves files from the asar)
+scripts/
+  vendor-mediapipe.cjs   bundle the face engine for offline use
+  start.sh / .command / .bat   web-app launchers
 ```
 
 ---
 
 ## Notes & limitations
 
-- Best in **Chrome/Edge** (WebGL2 + `requestVideoFrameCallback`). Works in
-  Firefox/Safari with minor perf differences.
+- The desktop app uses Chromium, so the camera, WebGL2 and per-frame timing are
+  consistent on every machine. The web app is best in **Chrome/Edge**.
 - Animated GIF stickers show their first frame only; use a **video overlay** for
   motion.
-- Control ⇄ display sync is same-computer/same-browser by design (no server).
-  Controlling from a separate phone/device would need a small WebSocket relay —
-  a natural future addition; the messaging is already abstracted in `bus.js`.
+- Control ⇄ display sync is same-machine by design (no server). Controlling from
+  a separate phone/device would need a small WebSocket relay — a natural future
+  addition; the messaging is already abstracted in `bus.js`.
 
 ## Credits
 
