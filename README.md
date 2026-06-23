@@ -1,181 +1,127 @@
 # FaceTracker
 
 Live webcam **face-paint mapping** for installations, photo booths and "magic
-mirror" experiences — like the `#SKELFIE` skull mirror. Point a camera at people
-and FaceTracker maps an uploaded paint design onto every face in real time,
-following each face as it moves, plus text / image / **video** logo overlays.
+mirror" experiences — like the `#SKELFIE` skull mirror. It detects every face in
+the camera feed and warps an uploaded paint design onto each one in real time,
+plus text / image / looping-video logo overlays.
 
-It has two surfaces:
+It runs as a **desktop app you double-click**, with two windows:
 
-- **Control panel** — your "CRM". Upload paints, stickers and overlays, tune the
-  look, and see whether the display is live.
-- **Display** — the 24/7 screen guests see. Webcam in, painted faces out.
+- **Control** — upload paints, stickers and overlays, and tune the look.
+- **Display** — the full-screen output guests see.
 
-It ships as a **double-click desktop app** (recommended) and *also* runs as a
-plain web app. Everything is stored locally; **no backend, no account**.
-
-| | |
-|---|---|
-| Face tracking | MediaPipe **FaceLandmarker** (468-point mesh, up to 10 faces) |
-| Rendering | WebGL mesh warp (898 triangles) + anchored sticker quads + DOM overlays |
-| Storage | IndexedDB (paints, stickers, overlays, settings) with JSON export/import |
-| Sync | `BroadcastChannel` (control ⇄ display), live |
-| Desktop shell | Electron (Chromium) — works offline, auto-fullscreen, kiosk-ready |
+Everything is stored locally. No server, no account, and it can run fully offline.
 
 ---
 
-## Run it — desktop app (recommended)
+## Quick start
 
-This is the easy path for the person operating it: a normal app window, no
-terminal, no localhost, camera permission handled for you, and it can run
-**fully offline**.
+1. Install **Node.js 18+** → https://nodejs.org (one time).
+2. In this folder, run:
 
-**For the operator (after you've given them the built app):**
-Double-click **FaceTracker**. The control panel opens; click **Open Display** and
-the display fills the second screen (or press **F** to go full screen on one).
-That's it.
+   ```bash
+   npm install
+   npm start
+   ```
 
-**To build the app once (on a machine with Node 18+ installed):**
+That's it. Two windows open — **Control** and a live **Display** showing your
+webcam. In **Control → Paints**, click **Add sample skull paint** and watch it
+map onto your face.
 
-```bash
-npm install                  # one time
-npm run vendor:mediapipe     # optional: bundle the face engine to run offline
-npm start                    # run it right now to try it
-
-npm run dist                 # build the installer: .dmg / .exe / AppImage
-```
-
-`npm run dist` produces an installer in `release/` for **the OS you run it on**
-(build on a Mac for `.dmg`, on Windows for `.exe`). Hand that single file to your
-client. (Want installers for all three OSes automatically? See *Building
-installers in CI* below.)
-
-> First launch downloads the face engine unless you ran `vendor:mediapipe`.
-> After the first run it's cached, so internet isn't needed again. Unsigned apps
-> prompt once: macOS → right-click → **Open**; Windows → **More info → Run
-> anyway**.
-
-## Run it — web app (no install)
-
-Serve the folder over `http://localhost` (the camera + live sync need a secure
-origin, which `localhost` provides — double-clicking the `.html` files won't
-work):
-
-```bash
-./scripts/start.sh         # macOS / Linux
-scripts\start.bat          # Windows
-python3 -m http.server 8000   # …or any static server
-```
-
-Open **http://localhost:8000/control.html**, click **Open Display ↗**, allow the
-camera, press **F**. In **Paints**, click **Add sample skull paint** to see it
-working immediately.
+> You never open the `.html` files directly — `npm start` runs the whole app.
 
 ---
 
-## Authoring content
+## Give it to your client (a double-click installer)
 
-### Face paints (full-face mesh)
-The most immersive option — the image warps to follow the whole face.
+Build a standalone app the venue/operator can install with no terminal:
 
-1. **Download the template** (Paints tab). It shows the face-mesh layout with the
+```bash
+npm run dist
+```
+
+The installer lands in `release/` — `.dmg` (macOS), `.exe` (Windows) or
+`.AppImage` (Linux). It builds for **the OS you run the command on** (build on a
+Mac to get a `.dmg`, on Windows to get an `.exe`).
+
+For the operator it's just: open **FaceTracker** → the Control panel and a
+full-screen Display come up, camera and all. On a setup with two screens the
+Display fills the second monitor automatically; add it to your OS startup items
+for unattended 24/7 use.
+
+> The app is unsigned, so the **first** launch needs one click to allow it:
+> macOS → right-click the app → **Open**; Windows → **More info → Run anyway**.
+> (Want signed installers and automatic Mac/Windows/Linux builds via GitHub
+> Actions? Ask and I'll add the workflow.)
+
+---
+
+## Run offline (optional)
+
+By default the face engine downloads once on first run and is cached afterwards.
+To bundle it so the app never needs internet, run this **before** `npm start` or
+`npm run dist`:
+
+```bash
+npm run vendor:mediapipe
+```
+
+It copies the MediaPipe engine and model into `vendor/`; the app then loads
+everything locally.
+
+---
+
+## Creating content
+
+### Face paints (warp onto the whole face)
+1. **Paints tab → Download paint template.** It shows the face-mesh layout with
    eyes, nose, mouth and jaw marked.
-2. Open it in any editor (Photoshop, Procreate, Figma, GIMP, Photopea…), paint on
-   a **new layer**, then **hide the guide** and export a **transparent PNG** at
-   the same square size.
-3. Upload it. Whatever you paint at a spot on the template lands at the matching
+2. Paint on it in any editor (Photoshop, Procreate, Figma, GIMP, Photopea…) on a
+   new layer, hide the guide, and export a **transparent PNG** at the same square
+   size.
+3. Upload it — whatever you paint at a spot on the template lands at the matching
    spot on every face.
 
-Choose how paints are applied (Paints tab):
+Apply paints two ways (Paints tab):
 - **Single active paint** — everyone gets the same design.
-- **Random paint per face** — each detected face is assigned a random design
-  from the ones you mark "in rotation" (great for crowds, like the example).
+- **Random paint per face** — each face gets a random design from the ones you
+  mark "in rotation" (great for crowds, like the skelfie example).
 
 ### Stickers (anchored PNGs)
-Pin a PNG to a face feature — across the eyes, forehead, nose, mouth, chin or the
-whole face — with scale, offset, rotation and opacity. Stickers track the face
-but don't warp, so they're quick to make (e.g. a crown, glasses, a logo badge).
+Pin a PNG to a feature — eyes, forehead, nose, mouth, chin or whole face — with
+scale, offset, rotation and opacity. Stickers follow the face but don't warp, so
+they're quick to make (crown, glasses, a logo badge).
 
 ### Overlays (text / image / video logos)
-Full-screen layer on top of the feed:
-- **Text** — captions / hashtags with colour, background, size, position.
-- **Image** — a PNG/JPG logo, positioned and scaled.
-- **Video** — a looping, muted video logo (MP4/WebM).
-
-Position everything in the live preview (Overlays tab).
+A layer on top of the feed: **text** captions/hashtags, an **image** logo, or a
+**looping video** logo (MP4/WebM). Position everything in the live preview.
 
 ---
 
-## Display settings
+## Display settings & shortcuts
 
-Camera selection · mirror (selfie view) · colour look (none / grayscale / noir /
-sepia / **duotone** with custom colours, for that black-&-white skelfie feel) ·
-max faces (1–10) · smoothing · GPU/CPU detector · background colour · FPS readout
-· mesh wireframe debug.
+Camera · mirror (selfie view) · colour look (none / grayscale / noir / sepia /
+**duotone** with custom colours, for the black-&-white skelfie feel) · max faces
+(1–10) · smoothing · GPU/CPU detector · background colour · FPS readout · mesh
+wireframe debug.
 
-**Display keyboard shortcuts:** `F` full screen · `I` info/FPS · `D` mesh debug.
+**On the Display:** `F` full screen · `I` info/FPS · `D` mesh debug.
 
----
-
-## Kiosk / always-on mode
-
-**Desktop app:** the display auto-starts (no "Start" click) and goes full screen
-on a second monitor automatically. To launch on boot, add the built app to your
-OS login items / startup folder.
-
-**Web app:** launch the display as a borderless full-screen Chrome window:
-
-```bash
-# macOS / Windows / Linux (adjust the chrome command per OS)
-chrome --kiosk --app="http://localhost:8000/display.html"
-```
-
-Extra flags for unattended web installs:
-`--noerrdialogs --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required`.
+**Back up / move a setup:** Control → **Export** writes one JSON file with every
+paint, sticker, overlay and setting; **Import** restores it on another machine.
 
 ---
 
-## Building installers in CI (all OSes at once)
-
-Build for macOS, Windows and Linux from one push with GitHub Actions (a matrix
-running `npm ci && npm run vendor:mediapipe && npm run dist` on
-`macos-latest` / `windows-latest` / `ubuntu-latest`, uploading `release/*` as
-artifacts). Ask and I'll drop in the workflow. For shipping to clients without
-the "unidentified developer" prompt you'd add code-signing certs as repo secrets.
-
----
-
-## Back up / move your kit
-
-Control panel → **Export** writes a single JSON file containing every paint,
-sticker, overlay and setting (images embedded). **Import** restores it on another
-machine. Handy for building your kit on a laptop and deploying to the venue PC.
-
----
-
-## Running fully offline
-
-In the **desktop app**, just run `npm run vendor:mediapipe` before building. It
-copies the MediaPipe engine and downloads the model into `vendor/`; the preload
-detects them and the app loads everything locally — no internet at runtime.
-
-For the **web app**, do the same `vendor:mediapipe` step (or place the files in
-`vendor/` manually) and set `window.FT_CONFIG = { mediapipeVendorBase: '/vendor' }`
-before the scripts load. `js/config.js` already prefers the local copy when that
-is set.
-
----
-
-## Project layout
+## How it's built
 
 ```
-index.html / control.html / display.html   web pages (shared by web + desktop)
+control.html / display.html / index.html   web UI (shared by desktop + browser)
 css/app.css                                 styles
 js/
-  config.js          MediaPipe/CDN config (+ FT_CONFIG overrides), defaults, anchors
-  facemesh-data.js   468 UV coords + 898 triangles (from MediaPipe canonical model)
+  config.js          MediaPipe config (+ FT_CONFIG overrides), defaults, anchors
+  facemesh-data.js   468 UV coords + 898 triangles (MediaPipe canonical model)
   store.js           IndexedDB + export/import
-  bus.js             BroadcastChannel sync + presence
+  bus.js             BroadcastChannel sync + presence (control <-> display)
   tracker.js         MediaPipe FaceLandmarker + multi-face tracking/smoothing
   renderer.js        WebGL mesh-warp + sticker compositor
   overlays.js        DOM text/image/video overlay layer
@@ -185,23 +131,40 @@ js/
 electron/
   main.cjs           desktop shell: serves the app on loopback, opens windows
   preload.cjs        exposes FT_CONFIG (electron flag + offline vendor base)
-  static-server.cjs  tiny static file server (also serves files from the asar)
+  static-server.cjs  tiny static file server (also serves from the packaged app)
 scripts/
   vendor-mediapipe.cjs   bundle the face engine for offline use
-  start.sh / .command / .bat   web-app launchers
 ```
+
+The desktop shell serves the web UI over loopback `http` and opens it in native
+Chromium windows, so the camera, WebGL warp, storage and live sync behave
+identically everywhere.
+
+<details>
+<summary>Run in a plain browser instead (for development)</summary>
+
+The same files run as a web app. Serve the folder over `http://localhost`
+(needed for camera + sync — opening the files directly won't work):
+
+```bash
+python3 -m http.server 8000   # or any static server
+```
+
+Then open `http://localhost:8000/`. The desktop app is the supported way to ship
+it; this is just handy for quick edits with browser dev tools.
+</details>
 
 ---
 
-## Notes & limitations
+## Notes
 
-- The desktop app uses Chromium, so the camera, WebGL2 and per-frame timing are
-  consistent on every machine. The web app is best in **Chrome/Edge**.
-- Animated GIF stickers show their first frame only; use a **video overlay** for
+- Multi-face tracking keeps a stable identity per face (so each keeps its paint)
+  and smooths landmark jitter.
+- Animated GIF stickers show their first frame only — use a **video overlay** for
   motion.
-- Control ⇄ display sync is same-machine by design (no server). Controlling from
-  a separate phone/device would need a small WebSocket relay — a natural future
-  addition; the messaging is already abstracted in `bus.js`.
+- Control ⇄ Display sync is same-machine by design. Driving it from a separate
+  phone/device would need a small relay; the messaging is already abstracted in
+  `js/bus.js`, so it's a clean future addition.
 
 ## Credits
 
