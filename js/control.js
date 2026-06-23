@@ -412,7 +412,7 @@ function buildReport(d) {
   L.push('display online: ' + (document.getElementById('statusDot')?.classList.contains('on') ? 'yes' : 'no'));
   L.push('content:        ' + `${state.paints.length} paint(s), ${state.stickers.length} sticker(s), ${state.overlays.length} overlay(s)`);
   L.push('paint mode:     ' + s.paintMode + (s.paintMode === 'single' ? ` (active set: ${s.activePaintId ? 'yes' : 'NO'})` : ''));
-  L.push('settings:       ' + `mirror=${s.mirror}, occlusion=${s.occlusion}, edgeFeather=${s.edgeFeather}, smoothing=${s.smoothing}, numFaces=${s.numFaces}, opacity=${s.paintOpacity}, colour=${s.colorFilter}, detector=${s.detectorDelegate}`);
+  L.push('settings:       ' + `mirror=${s.mirror}, occlusion=${s.occlusion}, edgeOpacity=${s.edgeOpacity}, grad=${s.gradStart}-${s.gradEnd}/h${s.gradHardness}, smoothing=${s.smoothing}, numFaces=${s.numFaces}, opacity=${s.paintOpacity}, colour=${s.colorFilter}, detector=${s.detectorDelegate}`);
   L.push('userAgent:      ' + navigator.userAgent);
   L.push('');
   L.push('[Display]');
