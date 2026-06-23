@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>FaceTracker — Display</title>
+<link rel="stylesheet" href="css/app.css" />
+</head>
+<body class="display">
+  <!-- Webcam background (mirrored / colour-filtered via CSS from settings) -->
+  <video id="cam" playsinline muted></video>
+
+  <!-- Warped paint + stickers -->
+  <canvas id="gl"></canvas>
+
+  <!-- Text / image / video overlays -->
+  <div id="overlays"></div>
+
+  <div id="fps" class="fps"></div>
+
+  <!-- Start gate (a user gesture is required for camera + fullscreen) -->
+  <div id="gate" class="gate">
+    <div class="gate-box">
+      <div class="lc-icon">🪞</div>
+      <h1>FaceTracker display</h1>
+      <p>Click to start the camera. Press <b>F</b> for full screen.</p>
+      <button class="btn big">Start</button>
+    </div>
+  </div>
+
+  <div id="message" class="message" style="display:none"></div>
+
+  <!-- Duotone colour filter (driven from settings) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="ft-duotone" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix"
+        values="0.2126 0.7152 0.0722 0 0
+                0.2126 0.7152 0.0722 0 0
+                0.2126 0.7152 0.0722 0 0
+                0 0 0 1 0" />
+      <feComponentTransfer>
+        <feFuncR id="dt-r" type="table" tableValues="0 1" />
+        <feFuncG id="dt-g" type="table" tableValues="0 1" />
+        <feFuncB id="dt-b" type="table" tableValues="0 1" />
+      </feComponentTransfer>
+    </filter>
+  </svg>
+
+  <script type="module" src="js/display.js"></script>
+</body>
+</html>
