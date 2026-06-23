@@ -237,6 +237,7 @@ function frame() {
       meshDebug: settings.meshDebug,
       occlusion: settings.occlusion !== false,
       edgeFeather: settings.edgeFeather ?? 0.45,
+      edgeOpacity: settings.edgeOpacity ?? 0,
     });
 
     // FPS

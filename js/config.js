@@ -74,7 +74,8 @@ export const DEFAULT_SETTINGS = {
   enabledPaintIds: [], // used in randomPerFace mode (empty = all paints)
   smoothing: 0.4, // 0 = raw landmarks, →1 = heavy temporal smoothing (One-Euro). Lower = snappier.
   occlusion: true, // depth-based occlusion (hides folds/far side; never deletes the visible face)
-  edgeFeather: 0.45, // edge softness: 0 = hard edge, →1 = soft gradient reaching further into the face (solid middle, soft edge)
+  edgeFeather: 0.45, // gradient width: 0 = hard edge, →1 = soft gradient reaching further into the face
+  edgeOpacity: 0, // alpha at the very edge of the paint: 0 = fades to transparent, 1 = opaque edge
   showFps: false,
   meshDebug: false, // draw wireframe instead of texture
   bgColor: '#000000', // shown when no camera / letterboxing

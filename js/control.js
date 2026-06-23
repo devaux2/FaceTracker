@@ -294,11 +294,20 @@ function renderDisplay() {
     ),
     field(`Smoothing (${Math.round(s.smoothing * 100)}%)`, slider(s.smoothing, 0, 0.95, 0.05, (v) => patchSettings({ smoothing: v }))),
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.occlusion !== false, onchange: (e) => patchSettings({ occlusion: e.target.checked }) }), 'Occlusion — hide the far side when the head turns']),
-    field(
-      `Edge softness (${Math.round((s.edgeFeather ?? 0.45) * 100)}%)`,
-      slider(s.edgeFeather ?? 0.45, 0, 1, 0.02, (v) => patchSettings({ edgeFeather: v })),
-      '0 = hard cut · higher = solid centre with a softer, wider fade at the edges'
-    ),
+    (() => {
+      const grad = el('div', { class: 'edge-grad' });
+      const prev = el('div', { class: 'edge-preview checker' }, grad);
+      const paint = (op, sf) => {
+        grad.style.background = `linear-gradient(to right, rgba(255,45,139,${op}) 0%, rgba(255,45,139,1) ${Math.round(sf * 100)}%, rgba(255,45,139,1) 100%)`;
+      };
+      paint(s.edgeOpacity ?? 0, s.edgeFeather ?? 0.45);
+      return el('div', {}, [
+        el('span', { class: 'field-label' }, 'Edge blend — left = edge of paint, right = centre'),
+        prev,
+        field('Edge opacity (transparency at the edge)', slider(s.edgeOpacity ?? 0, 0, 1, 0.02, (v) => { patchSettings({ edgeOpacity: v }); paint(v, state.settings.edgeFeather ?? 0.45); })),
+        field('Gradient width (how the fade is mapped)', slider(s.edgeFeather ?? 0.45, 0, 1, 0.02, (v) => { patchSettings({ edgeFeather: v }); paint(state.settings.edgeOpacity ?? 0, v); })),
+      ]);
+    })(),
     field('Detector', el('select', { onchange: (e) => patchSettings({ detectorDelegate: e.target.value }) }, ['GPU', 'CPU'].map((d) => el('option', { value: d, selected: s.detectorDelegate === d }, d)))),
     field('Background', el('input', { type: 'color', value: s.bgColor, oninput: (e) => patchSettings({ bgColor: e.target.value }) })),
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.showFps, onchange: (e) => patchSettings({ showFps: e.target.checked }) }), 'Show FPS / face count on display']),

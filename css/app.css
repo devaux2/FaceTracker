@@ -109,6 +109,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16
 .fit summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 700; list-style: revert; }
 .fit .field { margin: 8px 0; }
 .fit .field-label { font-size: 12px; }
+.edge-preview { position: relative; height: 28px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); margin: 8px 0; }
+.edge-grad { position: absolute; inset: 0; }
 
 .ov-preview { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #05060a url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="none" stroke="%23ffffff10"/></svg>'); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 8px 0 16px; }
 .ov-preview-inner { position: absolute; inset: 0; }
