@@ -12,6 +12,9 @@
   },
   "author": "Paradox State",
   "license": "MIT",
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
   "devDependencies": {
     "electron": "^32.1.2",
     "electron-builder": "^25.0.5",
@@ -20,6 +23,14 @@
   "build": {
     "appId": "co.paradoxstate.facetracker",
     "productName": "FaceTracker",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "devaux2",
+        "repo": "FaceTracker",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "index.html",
       "control.html",
@@ -43,7 +54,11 @@
       }
     },
     "win": {
-      "target": ["nsis", "portable"]
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
     },
     "linux": {
       "target": ["AppImage"],

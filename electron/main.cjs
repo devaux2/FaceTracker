@@ -1,11 +1,19 @@
 // FaceTracker — Electron main process.
-// Serves the existing web app over loopback http and opens it in native
-// windows: a Control window, and a Display window (fullscreen on a second
-// monitor if one is connected). Camera permission is granted automatically so
-// the operator never sees a prompt.
-const { app, BrowserWindow, screen, session, systemPreferences, Menu } = require('electron');
+// Serves the web app over loopback http and opens it in native windows (Control
+// + a fullscreen Display). Camera permission is auto-granted. Auto-updates are
+// pulled from the project's public GitHub Releases via electron-updater.
+const { app, BrowserWindow, screen, session, systemPreferences, Menu, ipcMain, shell } = require('electron');
 const path = require('path');
 const { listen } = require('./static-server.cjs');
+
+let autoUpdater = null;
+if (app.isPackaged) {
+  try {
+    autoUpdater = require('electron-updater').autoUpdater;
+  } catch (e) {
+    console.warn('electron-updater unavailable:', e);
+  }
+}
 
 const APP_ROOT = path.join(__dirname, '..');
 let server = null;
@@ -23,26 +31,17 @@ function createControlWindow() {
     minHeight: 560,
     title: 'FaceTracker — Control',
     backgroundColor: '#0c0d12',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
   });
   controlWin.loadURL(url('control.html'));
-
-  // The control panel calls window.open('display.html'); intercept it and make
-  // a proper Display window instead (placed on the external screen if present).
   controlWin.webContents.setWindowOpenHandler(({ url: target }) => {
     if (target.includes('display.html')) openDisplayWindow();
     return { action: 'deny' };
   });
-
   controlWin.on('closed', () => (controlWin = null));
 }
 
 function openDisplayWindow() {
-  // Only ever one display window — focus it if it already exists.
   if (displayWin && !displayWin.isDestroyed()) {
     displayWin.focus();
     return;
@@ -62,11 +61,7 @@ function openDisplayWindow() {
     backgroundColor: '#000000',
     title: 'FaceTracker — Display',
     autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
   });
   win.loadURL(url('display.html'));
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -76,25 +71,58 @@ function openDisplayWindow() {
 
 function grantMediaPermissions() {
   const ses = session.defaultSession;
-  // Auto-approve camera/fullscreen requests for our loopback origin.
-  ses.setPermissionRequestHandler((_wc, permission, cb) => cb(true));
+  ses.setPermissionRequestHandler((_wc, _permission, cb) => cb(true));
   ses.setPermissionCheckHandler(() => true);
 }
 
+// ---- auto-update ----------------------------------------------------------
+function broadcastUpdate(payload) {
+  for (const w of BrowserWindow.getAllWindows()) w.webContents.send('updates:event', payload);
+}
+
+function setupUpdater() {
+  if (!autoUpdater) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  const events = ['checking-for-update', 'update-available', 'update-not-available', 'download-progress', 'update-downloaded'];
+  for (const ev of events) autoUpdater.on(ev, (data) => broadcastUpdate({ event: ev, data }));
+  autoUpdater.on('error', (err) => broadcastUpdate({ event: 'error', data: String((err && err.message) || err) }));
+  autoUpdater.checkForUpdates().catch(() => {});
+}
+
+ipcMain.handle('updates:check', async () => {
+  if (!autoUpdater) return { ok: false, reason: 'dev' };
+  try {
+    await autoUpdater.checkForUpdates();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: String((e && e.message) || e) };
+  }
+});
+ipcMain.handle('updates:install', () => {
+  if (autoUpdater) {
+    try {
+      autoUpdater.quitAndInstall();
+    } catch {}
+  }
+});
+ipcMain.handle('app:openExternal', (_e, u) => {
+  if (typeof u === 'string' && /^https:\/\//.test(u)) shell.openExternal(u);
+});
+
+// ---- lifecycle ------------------------------------------------------------
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   grantMediaPermissions();
-
-  // On macOS, proactively trigger the one-time OS camera permission dialog.
   if (process.platform === 'darwin') {
     try {
       await systemPreferences.askForMediaAccess('camera');
     } catch {}
   }
-
   ({ server, port } = await listen(APP_ROOT));
   createControlWindow();
-  openDisplayWindow(); // bring the live display up immediately so it's clearly working
+  openDisplayWindow();
+  setupUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createControlWindow();
@@ -104,7 +132,6 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
-
 app.on('quit', () => {
   if (server) server.close();
 });

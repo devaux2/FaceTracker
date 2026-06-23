@@ -15,6 +15,7 @@ const state = { tab: 'paints', settings: { ...DEFAULT_SETTINGS }, paints: [], st
 let objectUrls = [];
 let cameras = [];
 let overlayPreview = null;
+let updateStatusText = '';
 
 // ---- tiny DOM helpers -----------------------------------------------------
 function el(tag, props = {}, children = []) {
@@ -267,22 +268,70 @@ function renderDisplay() {
 }
 
 function renderHelp() {
-  return el('div', { class: 'help' }, [
-    el('h2', {}, 'How to run'),
+  const children = [];
+  if (window.FT_UPDATE) children.push(updatesSection());
+  children.push(
+    el('h2', {}, 'How to use'),
     el('ol', {}, [
-      el('li', { html: '<b>Start the display</b> on the screen that faces guests: click <b>Open Display ↗</b> above, allow camera, then press <b>F</b> for full-screen (or launch Chrome in kiosk mode — see README).' }),
-      el('li', { html: '<b>Add face paints</b> in the Paints tab. Download the template, paint on it in any editor, export a <b>transparent PNG</b>, and upload it.' }),
+      el('li', { html: 'The <b>Display</b> window shows the live painted feed. Press <b>F</b> for full screen; on a second monitor it goes full screen automatically.' }),
+      el('li', { html: '<b>Add face paints</b> in the Paints tab: download the template, paint on it, export a <b>transparent PNG</b>, and upload it — or click <b>Add sample skull paint</b>.' }),
       el('li', { html: '<b>Pick a mode:</b> one active paint for everyone, or a random paint per detected face.' }),
       el('li', { html: '<b>Add overlays</b> (text, image or looping video logo) and position them in the preview.' }),
-      el('li', { html: 'This control panel and the display talk to each other automatically while both are open in the <b>same browser on this computer</b>. Changes apply live.' }),
+      el('li', { html: 'Tune <b>Occlusion</b>, <b>Edge blend</b> and <b>Smoothing</b> in the Display tab to taste.' }),
     ]),
     el('h2', {}, 'Tips'),
     el('ul', {}, [
-      el('li', { html: 'Display shortcuts: <b>F</b> full-screen · <b>I</b> info/FPS · <b>D</b> mesh debug.' }),
-      el('li', { html: 'Use <b>Export</b> to back up your whole kit (paints + settings) and move it to the venue machine.' }),
-      el('li', { html: 'For an always-on install, run Chrome in kiosk mode pointing at the display URL (README).' }),
+      el('li', { html: 'Display shortcuts: <b>F</b> full screen · <b>I</b> info/FPS · <b>D</b> mesh debug.' }),
+      el('li', { html: 'Use <b>Export</b> to back up your whole kit (paints + settings) and move it to another machine.' }),
+    ])
+  );
+  return el('div', { class: 'help' }, children);
+}
+
+function updatesSection() {
+  const ver = (window.FT_CONFIG && window.FT_CONFIG.version) || '';
+  return el('div', {}, [
+    el('h2', {}, 'Updates'),
+    el('p', { class: 'hint' }, `Installed version: ${ver}`),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'btn', onclick: checkUpdate }, 'Check for updates'),
+      el('button', { class: 'btn', id: 'btnInstall', style: { display: 'none' }, onclick: () => window.FT_UPDATE.install() }, 'Restart & install update'),
+      el('span', { id: 'updateStatus', class: 'hint', style: { marginLeft: '8px' } }, updateStatusText),
     ]),
   ]);
+}
+
+async function checkUpdate() {
+  setUpdateStatus('Checking…');
+  try {
+    const r = await window.FT_UPDATE.check();
+    if (!r.ok) setUpdateStatus(r.reason === 'dev' ? 'Updates apply to the installed app only.' : 'Check failed: ' + r.reason);
+  } catch {
+    setUpdateStatus('Check failed.');
+  }
+}
+
+function setUpdateStatus(txt, showInstall) {
+  updateStatusText = txt;
+  const s = document.getElementById('updateStatus');
+  if (s) s.textContent = txt;
+  if (showInstall !== undefined) {
+    const b = document.getElementById('btnInstall');
+    if (b) b.style.display = showInstall ? '' : 'none';
+  }
+}
+
+function applyUpdateEvent(p) {
+  const pct = Math.round((p.data && p.data.percent) || 0);
+  const map = {
+    'checking-for-update': () => setUpdateStatus('Checking…'),
+    'update-available': () => setUpdateStatus('Update found — downloading…'),
+    'update-not-available': () => setUpdateStatus("You're up to date."),
+    'download-progress': () => setUpdateStatus(`Downloading ${pct}%`),
+    'update-downloaded': () => setUpdateStatus('Update ready.', true),
+    error: () => setUpdateStatus('Update error: ' + (p.data || '')),
+  };
+  (map[p.event] || (() => {}))();
 }
 
 const TABS = { paints: renderPaints, stickers: renderStickers, overlays: renderOverlays, display: renderDisplay, help: renderHelp };
@@ -462,6 +511,16 @@ function boot() {
 
   trackPresence(bus, 'display', setStatus);
   navigator.mediaDevices?.enumerateDevices().then((d) => { cameras = d.filter((x) => x.kind === 'videoinput'); }).catch(() => {});
+
+  // Desktop build: show version + listen for auto-update events.
+  const v = window.FT_CONFIG && window.FT_CONFIG.version;
+  if (v) {
+    const brand = document.querySelector('.brand');
+    if (brand) brand.insertAdjacentHTML('beforeend', ` <span style="opacity:.5;font-weight:600;font-size:12px">v${v}</span>`);
+  }
+  if (window.FT_UPDATE) {
+    window.FT_UPDATE.onEvent((p) => applyUpdateEvent(p));
+  }
 
   refresh();
 }

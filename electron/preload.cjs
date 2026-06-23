@@ -1,11 +1,14 @@
 // FaceTracker — Electron preload.
-// Exposes a small config object to the page. Most importantly it tells the app
-// it's running inside Electron (so the display auto-starts) and, if the
-// MediaPipe face engine has been vendored locally (npm run vendor:mediapipe),
-// points the app at the local copy so it runs fully offline.
-const { contextBridge } = require('electron');
+// Exposes a small, safe API to the page: a config object (electron flag, app
+// version, offline-vendor base) and an updater bridge.
+const { contextBridge, ipcRenderer } = require('electron');
 const fs = require('fs');
 const path = require('path');
+
+let version = '0.0.0';
+try {
+  version = require('../package.json').version;
+} catch {}
 
 function detectVendor() {
   const base = path.join(__dirname, '..', 'vendor');
@@ -22,5 +25,13 @@ function detectVendor() {
 contextBridge.exposeInMainWorld('FT_CONFIG', {
   electron: true,
   platform: process.platform,
-  mediapipeVendorBase: detectVendor(), // '/vendor' when offline assets are present, else null (use CDN)
+  version,
+  mediapipeVendorBase: detectVendor(),
+});
+
+contextBridge.exposeInMainWorld('FT_UPDATE', {
+  check: () => ipcRenderer.invoke('updates:check'),
+  install: () => ipcRenderer.invoke('updates:install'),
+  openExternal: (u) => ipcRenderer.invoke('app:openExternal', u),
+  onEvent: (cb) => ipcRenderer.on('updates:event', (_e, payload) => cb(payload)),
 });

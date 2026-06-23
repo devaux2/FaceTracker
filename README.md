@@ -34,15 +34,15 @@ map onto your face.
 
 ## Give it to your client (a double-click installer)
 
-Build a standalone app the venue/operator can install with no terminal:
+**Easiest:** every push to `main` builds the Windows + macOS installers in CI and
+publishes them here:
 
-```bash
-npm run dist
-```
+**https://github.com/devaux2/FaceTracker/releases/latest**
 
-The installer lands in `release/` — `.dmg` (macOS), `.exe` (Windows) or
-`.AppImage` (Linux). It builds for **the OS you run the command on** (build on a
-Mac to get a `.dmg`, on Windows to get an `.exe`).
+Download the `.exe` (Windows) or `.dmg` (macOS) and run it.
+
+Or build locally: `npm run dist` → installer in `release/` (builds for the OS you
+run it on).
 
 For the operator it's just: open **FaceTracker** → the Control panel and a
 full-screen Display come up, camera and all. On a setup with two screens the
@@ -51,8 +51,21 @@ for unattended 24/7 use.
 
 > The app is unsigned, so the **first** launch needs one click to allow it:
 > macOS → right-click the app → **Open**; Windows → **More info → Run anyway**.
-> (Want signed installers and automatic Mac/Windows/Linux builds via GitHub
-> Actions? Ask and I'll add the workflow.)
+
+---
+
+## Updates
+
+Installed apps **auto-update**: on launch they check GitHub Releases, download a
+newer version in the background, and install it on restart (there's also a
+**Check for updates** button in the control panel → Help). To ship an update,
+just push to `main` — CI builds and publishes a new version (`1.0.<run number>`)
+and every installed copy picks it up.
+
+> Auto-update reads the **public** releases, so the repository must be public
+> (Settings → General → Change visibility). Windows updates work unsigned;
+> **macOS** auto-update additionally requires an Apple Developer signing
+> certificate.
 
 ---
 
