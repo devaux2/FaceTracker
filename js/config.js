@@ -56,6 +56,8 @@ export const MSG = {
   PING: 'ping',
   PONG: 'pong', // { role }
   COMMAND: 'command', // { command, ...args } transient actions (e.g. capture)
+  DIAG_REQUEST: 'diag-request', // control asks the display for its runtime state
+  DIAG_REPORT: 'diag-report', // { diag } display's runtime state
 };
 
 // Default display settings. The control panel edits a copy of this shape.

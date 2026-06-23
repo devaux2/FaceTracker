@@ -25,12 +25,15 @@ async function createWith(cfg, numFaces, delegate) {
 }
 
 export async function loadFaceLandmarker({ numFaces = 5, delegate = 'GPU' } = {}) {
+  const primaryLabel = MEDIAPIPE_FALLBACK ? 'bundled (offline)' : 'CDN';
   try {
-    return await createWith(MEDIAPIPE, numFaces, delegate);
+    const landmarker = await createWith(MEDIAPIPE, numFaces, delegate);
+    return { landmarker, source: primaryLabel, module: MEDIAPIPE.module };
   } catch (e) {
     if (MEDIAPIPE_FALLBACK) {
       console.warn('Bundled face engine failed to load; falling back to CDN.', e);
-      return await createWith(MEDIAPIPE_FALLBACK, numFaces, delegate);
+      const landmarker = await createWith(MEDIAPIPE_FALLBACK, numFaces, delegate);
+      return { landmarker, source: 'CDN (fallback — bundled failed)', module: MEDIAPIPE_FALLBACK.module };
     }
     throw e;
   }

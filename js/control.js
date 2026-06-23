@@ -3,7 +3,7 @@
 // display window is live. Every change is written to IndexedDB and broadcast so
 // the display updates instantly.
 
-import { STORES, STICKER_ANCHORS, COLOR_FILTERS, DEFAULT_SETTINGS } from './config.js';
+import { STORES, STICKER_ANCHORS, COLOR_FILTERS, DEFAULT_SETTINGS, MSG } from './config.js';
 import * as store from './store.js';
 import { createBus, trackPresence } from './bus.js';
 import { buildTemplateCanvas, buildSamplePaintCanvas, downloadCanvas } from './template.js';
@@ -16,6 +16,8 @@ let objectUrls = [];
 let cameras = [];
 let overlayPreview = null;
 let updateStatusText = '';
+let diagText = '';
+let awaitingDiag = null;
 
 // ---- tiny DOM helpers -----------------------------------------------------
 function el(tag, props = {}, children = []) {
@@ -293,9 +295,101 @@ function renderHelp() {
     el('ul', {}, [
       el('li', { html: 'Display shortcuts: <b>F</b> full screen · <b>I</b> info/FPS · <b>D</b> mesh debug.' }),
       el('li', { html: 'Use <b>Export</b> to back up your whole kit (paints + settings) and move it to another machine.' }),
-    ])
+    ]),
+    diagnosticsSection()
   );
   return el('div', { class: 'help' }, children);
+}
+
+function diagnosticsSection() {
+  return el('div', {}, [
+    el('h2', {}, 'Diagnostics'),
+    el('p', { class: 'hint' }, 'Generate a report of the live state (version, face engine, GPU, camera, FPS, faces, recent errors) to check everything works — copy it to send for support.'),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'btn', onclick: runDiagnostics }, 'Run diagnostics'),
+      el('button', { class: 'btn ghost', id: 'diagCopy', style: { display: 'none' }, onclick: copyDiag }, 'Copy'),
+      el('button', { class: 'btn ghost', id: 'diagDownload', style: { display: 'none' }, onclick: downloadDiag }, 'Download .txt'),
+    ]),
+    el('textarea', {
+      id: 'diagOut',
+      rows: 16,
+      readonly: true,
+      style: { display: 'none', marginTop: '8px', fontFamily: 'ui-monospace, monospace', fontSize: '12px', whiteSpace: 'pre' },
+    }),
+  ]);
+}
+
+function runDiagnostics() {
+  const out = document.getElementById('diagOut');
+  out.style.display = '';
+  out.value = 'Collecting… (make sure the Display window is open)';
+  const p = new Promise((resolve) => {
+    awaitingDiag = resolve;
+    setTimeout(() => {
+      if (awaitingDiag) { awaitingDiag = null; resolve(null); }
+    }, 1500);
+  });
+  bus.post(MSG.DIAG_REQUEST);
+  p.then((displayDiag) => {
+    diagText = buildReport(displayDiag);
+    out.value = diagText;
+    document.getElementById('diagCopy').style.display = '';
+    document.getElementById('diagDownload').style.display = '';
+  });
+}
+
+function buildReport(d) {
+  const s = state.settings;
+  const cfg = window.FT_CONFIG;
+  const L = [];
+  L.push('FaceTracker diagnostics — ' + new Date().toISOString());
+  L.push('');
+  L.push('[Control]');
+  L.push('version:        ' + ((cfg && cfg.version) || 'web (npm start)'));
+  L.push('runtime:        ' + (cfg ? `desktop (${cfg.platform})` : 'browser'));
+  L.push('auto-update:    ' + (window.FT_UPDATE ? 'available' : 'not available'));
+  L.push('display online: ' + (document.getElementById('statusDot')?.classList.contains('on') ? 'yes' : 'no'));
+  L.push('content:        ' + `${state.paints.length} paint(s), ${state.stickers.length} sticker(s), ${state.overlays.length} overlay(s)`);
+  L.push('paint mode:     ' + s.paintMode + (s.paintMode === 'single' ? ` (active set: ${s.activePaintId ? 'yes' : 'NO'})` : ''));
+  L.push('settings:       ' + `mirror=${s.mirror}, occlusion=${s.occlusion}, edgeFeather=${s.edgeFeather}, smoothing=${s.smoothing}, numFaces=${s.numFaces}, opacity=${s.paintOpacity}, colour=${s.colorFilter}, detector=${s.detectorDelegate}`);
+  L.push('userAgent:      ' + navigator.userAgent);
+  L.push('');
+  L.push('[Display]');
+  if (!d) {
+    L.push('No response from a Display window within 1.5s.');
+    L.push('Open the Display (top-right "Open Display") and run diagnostics again.');
+  } else {
+    L.push('version:        ' + d.version);
+    L.push('running:        ' + d.running);
+    L.push('face engine:    ' + d.engine);
+    L.push('engine module:  ' + d.engineModule);
+    L.push('WebGL/GPU:      ' + d.webgl);
+    L.push('camera:         ' + d.cameraLabel + ' @ ' + d.resolution + (d.cameraFps ? ` ${d.cameraFps}fps` : ''));
+    L.push('detection:      ' + d.fps + ' fps, ' + d.faces + ' face(s) currently tracked');
+    L.push('');
+    L.push('recent display logs:');
+    if (d.recentLogs && d.recentLogs.length) d.recentLogs.forEach((l) => L.push('  ' + l));
+    else L.push('  (none)');
+  }
+  return L.join('\n');
+}
+
+function copyDiag() {
+  navigator.clipboard?.writeText(diagText).then(
+    () => {
+      const b = document.getElementById('diagCopy');
+      if (b) { b.textContent = 'Copied ✓'; setTimeout(() => (b.textContent = 'Copy'), 1500); }
+    },
+    () => {}
+  );
+}
+
+function downloadDiag() {
+  const blob = new Blob([diagText], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: `facetracker-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 function updatesSection() {
@@ -531,6 +625,15 @@ function boot() {
   if (window.FT_UPDATE) {
     window.FT_UPDATE.onEvent((p) => applyUpdateEvent(p));
   }
+
+  // Receive diagnostics reports from the display.
+  bus.on((msg) => {
+    if (msg.type === MSG.DIAG_REPORT && awaitingDiag) {
+      const resolve = awaitingDiag;
+      awaitingDiag = null;
+      resolve(msg.diag);
+    }
+  });
 
   refresh();
 }
