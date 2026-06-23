@@ -255,7 +255,17 @@ function renderDisplay() {
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.mirror, onchange: (e) => patchSettings({ mirror: e.target.checked }) }), 'Mirror (selfie view)']),
     field('Colour look', filterSel),
     duo,
-    field(`Max faces (${s.numFaces})`, slider(s.numFaces, 1, 10, 1, (v) => patchSettings({ numFaces: Math.round(v) }))),
+    field(
+      'Max faces (1–10)',
+      el('input', {
+        type: 'number',
+        min: 1,
+        max: 10,
+        step: 1,
+        value: s.numFaces,
+        onchange: (e) => patchSettings({ numFaces: Math.max(1, Math.min(10, Math.round(+e.target.value || 1))) }),
+      })
+    ),
     field(`Smoothing (${Math.round(s.smoothing * 100)}%)`, slider(s.smoothing, 0, 0.95, 0.05, (v) => patchSettings({ smoothing: v }))),
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.occlusion !== false, onchange: (e) => patchSettings({ occlusion: e.target.checked }) }), 'Occlusion — hide the far side when the head turns']),
     field(`Edge blend (${Math.round((s.edgeFeather ?? 0.6) * 100)}%)`, slider(s.edgeFeather ?? 0.6, 0, 1, 0.05, (v) => patchSettings({ edgeFeather: v }))),

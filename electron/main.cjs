@@ -31,7 +31,7 @@ function createControlWindow() {
     minHeight: 560,
     title: 'FaceTracker — Control',
     backgroundColor: '#0c0d12',
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   controlWin.loadURL(url('control.html'));
   controlWin.webContents.setWindowOpenHandler(({ url: target }) => {
@@ -61,7 +61,7 @@ function openDisplayWindow() {
     backgroundColor: '#000000',
     title: 'FaceTracker — Display',
     autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   win.loadURL(url('display.html'));
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
