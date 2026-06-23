@@ -11,6 +11,7 @@ const APP_ROOT = path.join(__dirname, '..');
 let server = null;
 let port = 0;
 let controlWin = null;
+let displayWin = null;
 
 const url = (p) => `http://127.0.0.1:${port}/${p}`;
 
@@ -41,6 +42,11 @@ function createControlWindow() {
 }
 
 function openDisplayWindow() {
+  // Only ever one display window — focus it if it already exists.
+  if (displayWin && !displayWin.isDestroyed()) {
+    displayWin.focus();
+    return;
+  }
   const displays = screen.getAllDisplays();
   const primary = screen.getPrimaryDisplay();
   const external = displays.find((d) => d.id !== primary.id);
@@ -64,6 +70,8 @@ function openDisplayWindow() {
   });
   win.loadURL(url('display.html'));
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  displayWin = win;
+  win.on('closed', () => (displayWin = null));
 }
 
 function grantMediaPermissions() {
@@ -86,6 +94,7 @@ app.whenReady().then(async () => {
 
   ({ server, port } = await listen(APP_ROOT));
   createControlWindow();
+  openDisplayWindow(); // bring the live display up immediately so it's clearly working
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createControlWindow();
