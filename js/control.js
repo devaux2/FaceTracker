@@ -3,7 +3,7 @@
 // display window is live. Every change is written to IndexedDB and broadcast so
 // the display updates instantly.
 
-import { STORES, STICKER_ANCHORS, COLOR_FILTERS, DEFAULT_SETTINGS } from './config.js';
+import { STORES, STICKER_ANCHORS, COLOR_FILTERS, DEFAULT_SETTINGS, MSG } from './config.js';
 import * as store from './store.js';
 import { createBus, trackPresence } from './bus.js';
 import { buildTemplateCanvas, buildSamplePaintCanvas, downloadCanvas } from './template.js';
@@ -16,6 +16,8 @@ let objectUrls = [];
 let cameras = [];
 let overlayPreview = null;
 let updateStatusText = '';
+let diagText = '';
+let awaitingDiag = null;
 
 // ---- tiny DOM helpers -----------------------------------------------------
 function el(tag, props = {}, children = []) {
@@ -48,13 +50,21 @@ async function patchSettings(patch) {
   bus.changed(STORES.settings);
 }
 async function savePaint(rec) {
-  await store.put(STORES.paints, { ...rec, updatedAt: Date.now() });
+  // Keep updatedAt (only changes when the image changes) so the display doesn't
+  // re-decode the texture for name/fit edits.
+  await store.put(STORES.paints, rec);
   bus.changed(STORES.paints);
   await refresh();
 }
 async function saveSticker(rec) {
-  await store.put(STORES.stickers, { ...rec, updatedAt: Date.now() });
+  await store.put(STORES.stickers, rec);
   bus.changed(STORES.stickers);
+}
+
+const DEFAULT_FIT = { ox: 0, oy: 0, scale: 1, rot: 0 };
+async function savePaintFit(p) {
+  await store.put(STORES.paints, p);
+  bus.changed(STORES.paints);
 }
 async function saveOverlay(rec) {
   await store.put(STORES.overlays, { ...rec, updatedAt: Date.now() });
@@ -124,6 +134,21 @@ function paintCard(p) {
         'In rotation',
       ]);
 
+  const fit = { ...DEFAULT_FIT, ...(p.fit || {}) };
+  const updFit = (patch) => {
+    Object.assign(fit, patch);
+    p.fit = { ...fit };
+    savePaintFit(p);
+  };
+  const fitUI = el('details', { class: 'fit' }, [
+    el('summary', {}, 'Adjust fit'),
+    field('Offset X', slider(fit.ox, -0.2, 0.2, 0.005, (v) => updFit({ ox: v }))),
+    field('Offset Y', slider(fit.oy, -0.2, 0.2, 0.005, (v) => updFit({ oy: v }))),
+    field('Scale', slider(fit.scale, 0.7, 1.4, 0.01, (v) => updFit({ scale: v }))),
+    field('Rotate', slider(fit.rot, -25, 25, 0.5, (v) => updFit({ rot: v }))),
+    el('button', { class: 'btn ghost sm', onclick: () => { p.fit = { ...DEFAULT_FIT }; savePaintFit(p); render(); } }, 'Reset fit'),
+  ]);
+
   return el('div', { class: 'card' + (isSingle && active ? ' card-active' : '') }, [
     el('div', { class: 'thumb checker' }, el('img', { src: thumbUrl(p.blob) })),
     el('input', {
@@ -132,6 +157,7 @@ function paintCard(p) {
       onchange: (e) => savePaint({ ...p, name: e.target.value }),
     }),
     el('div', { class: 'card-row' }, [select, el('button', { class: 'btn danger sm', onclick: () => deletePaint(p) }, 'Delete')]),
+    fitUI,
   ]);
 }
 
@@ -255,10 +281,33 @@ function renderDisplay() {
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.mirror, onchange: (e) => patchSettings({ mirror: e.target.checked }) }), 'Mirror (selfie view)']),
     field('Colour look', filterSel),
     duo,
-    field(`Max faces (${s.numFaces})`, slider(s.numFaces, 1, 10, 1, (v) => patchSettings({ numFaces: Math.round(v) }))),
+    field(
+      'Max faces (1–10)',
+      el('input', {
+        type: 'number',
+        min: 1,
+        max: 10,
+        step: 1,
+        value: s.numFaces,
+        onchange: (e) => patchSettings({ numFaces: Math.max(1, Math.min(10, Math.round(+e.target.value || 1))) }),
+      })
+    ),
     field(`Smoothing (${Math.round(s.smoothing * 100)}%)`, slider(s.smoothing, 0, 0.95, 0.05, (v) => patchSettings({ smoothing: v }))),
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.occlusion !== false, onchange: (e) => patchSettings({ occlusion: e.target.checked }) }), 'Occlusion — hide the far side when the head turns']),
-    field(`Edge blend (${Math.round((s.edgeFeather ?? 0.6) * 100)}%)`, slider(s.edgeFeather ?? 0.6, 0, 1, 0.05, (v) => patchSettings({ edgeFeather: v }))),
+    (() => {
+      const grad = el('div', { class: 'edge-grad' });
+      const prev = el('div', { class: 'edge-preview checker' }, grad);
+      const paint = (op, sf) => {
+        grad.style.background = `linear-gradient(to right, rgba(255,45,139,${op}) 0%, rgba(255,45,139,1) ${Math.round(sf * 100)}%, rgba(255,45,139,1) 100%)`;
+      };
+      paint(s.edgeOpacity ?? 0, s.edgeFeather ?? 0.45);
+      return el('div', {}, [
+        el('span', { class: 'field-label' }, 'Edge blend — left = edge of paint, right = centre'),
+        prev,
+        field('Edge opacity (transparency at the edge)', slider(s.edgeOpacity ?? 0, 0, 1, 0.02, (v) => { patchSettings({ edgeOpacity: v }); paint(v, state.settings.edgeFeather ?? 0.45); })),
+        field('Gradient width (how the fade is mapped)', slider(s.edgeFeather ?? 0.45, 0, 1, 0.02, (v) => { patchSettings({ edgeFeather: v }); paint(state.settings.edgeOpacity ?? 0, v); })),
+      ]);
+    })(),
     field('Detector', el('select', { onchange: (e) => patchSettings({ detectorDelegate: e.target.value }) }, ['GPU', 'CPU'].map((d) => el('option', { value: d, selected: s.detectorDelegate === d }, d)))),
     field('Background', el('input', { type: 'color', value: s.bgColor, oninput: (e) => patchSettings({ bgColor: e.target.value }) })),
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.showFps, onchange: (e) => patchSettings({ showFps: e.target.checked }) }), 'Show FPS / face count on display']),
@@ -283,9 +332,101 @@ function renderHelp() {
     el('ul', {}, [
       el('li', { html: 'Display shortcuts: <b>F</b> full screen · <b>I</b> info/FPS · <b>D</b> mesh debug.' }),
       el('li', { html: 'Use <b>Export</b> to back up your whole kit (paints + settings) and move it to another machine.' }),
-    ])
+    ]),
+    diagnosticsSection()
   );
   return el('div', { class: 'help' }, children);
+}
+
+function diagnosticsSection() {
+  return el('div', {}, [
+    el('h2', {}, 'Diagnostics'),
+    el('p', { class: 'hint' }, 'Generate a report of the live state (version, face engine, GPU, camera, FPS, faces, recent errors) to check everything works — copy it to send for support.'),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'btn', onclick: runDiagnostics }, 'Run diagnostics'),
+      el('button', { class: 'btn ghost', id: 'diagCopy', style: { display: 'none' }, onclick: copyDiag }, 'Copy'),
+      el('button', { class: 'btn ghost', id: 'diagDownload', style: { display: 'none' }, onclick: downloadDiag }, 'Download .txt'),
+    ]),
+    el('textarea', {
+      id: 'diagOut',
+      rows: 16,
+      readonly: true,
+      style: { display: 'none', marginTop: '8px', fontFamily: 'ui-monospace, monospace', fontSize: '12px', whiteSpace: 'pre' },
+    }),
+  ]);
+}
+
+function runDiagnostics() {
+  const out = document.getElementById('diagOut');
+  out.style.display = '';
+  out.value = 'Collecting… (make sure the Display window is open)';
+  const p = new Promise((resolve) => {
+    awaitingDiag = resolve;
+    setTimeout(() => {
+      if (awaitingDiag) { awaitingDiag = null; resolve(null); }
+    }, 1500);
+  });
+  bus.post(MSG.DIAG_REQUEST);
+  p.then((displayDiag) => {
+    diagText = buildReport(displayDiag);
+    out.value = diagText;
+    document.getElementById('diagCopy').style.display = '';
+    document.getElementById('diagDownload').style.display = '';
+  });
+}
+
+function buildReport(d) {
+  const s = state.settings;
+  const cfg = window.FT_CONFIG;
+  const L = [];
+  L.push('FaceTracker diagnostics — ' + new Date().toISOString());
+  L.push('');
+  L.push('[Control]');
+  L.push('version:        ' + ((cfg && cfg.version) || 'web (npm start)'));
+  L.push('runtime:        ' + (cfg ? `desktop (${cfg.platform})` : 'browser'));
+  L.push('auto-update:    ' + (window.FT_UPDATE ? 'available' : 'not available'));
+  L.push('display online: ' + (document.getElementById('statusDot')?.classList.contains('on') ? 'yes' : 'no'));
+  L.push('content:        ' + `${state.paints.length} paint(s), ${state.stickers.length} sticker(s), ${state.overlays.length} overlay(s)`);
+  L.push('paint mode:     ' + s.paintMode + (s.paintMode === 'single' ? ` (active set: ${s.activePaintId ? 'yes' : 'NO'})` : ''));
+  L.push('settings:       ' + `mirror=${s.mirror}, occlusion=${s.occlusion}, edgeFeather=${s.edgeFeather}, smoothing=${s.smoothing}, numFaces=${s.numFaces}, opacity=${s.paintOpacity}, colour=${s.colorFilter}, detector=${s.detectorDelegate}`);
+  L.push('userAgent:      ' + navigator.userAgent);
+  L.push('');
+  L.push('[Display]');
+  if (!d) {
+    L.push('No response from a Display window within 1.5s.');
+    L.push('Open the Display (top-right "Open Display") and run diagnostics again.');
+  } else {
+    L.push('version:        ' + d.version);
+    L.push('running:        ' + d.running);
+    L.push('face engine:    ' + d.engine);
+    L.push('engine module:  ' + d.engineModule);
+    L.push('WebGL/GPU:      ' + d.webgl);
+    L.push('camera:         ' + d.cameraLabel + ' @ ' + d.resolution + (d.cameraFps ? ` ${d.cameraFps}fps` : ''));
+    L.push('detection:      ' + d.fps + ' fps, ' + d.faces + ' face(s) currently tracked');
+    L.push('');
+    L.push('recent display logs:');
+    if (d.recentLogs && d.recentLogs.length) d.recentLogs.forEach((l) => L.push('  ' + l));
+    else L.push('  (none)');
+  }
+  return L.join('\n');
+}
+
+function copyDiag() {
+  navigator.clipboard?.writeText(diagText).then(
+    () => {
+      const b = document.getElementById('diagCopy');
+      if (b) { b.textContent = 'Copied ✓'; setTimeout(() => (b.textContent = 'Copy'), 1500); }
+    },
+    () => {}
+  );
+}
+
+function downloadDiag() {
+  const blob = new Blob([diagText], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: `facetracker-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 function updatesSection() {
@@ -521,6 +662,15 @@ function boot() {
   if (window.FT_UPDATE) {
     window.FT_UPDATE.onEvent((p) => applyUpdateEvent(p));
   }
+
+  // Receive diagnostics reports from the display.
+  bus.on((msg) => {
+    if (msg.type === MSG.DIAG_REPORT && awaitingDiag) {
+      const resolve = awaitingDiag;
+      awaitingDiag = null;
+      resolve(msg.diag);
+    }
+  });
 
   refresh();
 }

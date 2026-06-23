@@ -11,22 +11,28 @@ const OVERRIDES = (typeof window !== 'undefined' && window.FT_CONFIG) || {};
 const MP_VERSION = '0.10.15';
 const MP_CDN = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 
-export const MEDIAPIPE = OVERRIDES.mediapipeVendorBase
+const CDN_ENGINE = {
+  version: MP_VERSION,
+  // The `+esm` form is the most reliable for buildless ESM.
+  module: `${MP_CDN}/+esm`,
+  wasm: `${MP_CDN}/wasm`,
+  // Face landmark model (468 face + 10 iris landmarks). ~3.8 MB.
+  model: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+};
+
+const VENDOR_ENGINE = OVERRIDES.mediapipeVendorBase
   ? {
       version: MP_VERSION,
       module: `${OVERRIDES.mediapipeVendorBase}/tasks-vision/vision_bundle.mjs`,
       wasm: `${OVERRIDES.mediapipeVendorBase}/tasks-vision/wasm`,
       model: `${OVERRIDES.mediapipeVendorBase}/face_landmarker.task`,
     }
-  : {
-      version: MP_VERSION,
-      // The `+esm` form is the most reliable for buildless ESM.
-      module: `${MP_CDN}/+esm`,
-      wasm: `${MP_CDN}/wasm`,
-      // Face landmark model (468 face + 10 iris landmarks). ~3.8 MB.
-      model:
-        'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-    };
+  : null;
+
+// Use the bundled (offline) engine when present, else the CDN.
+export const MEDIAPIPE = VENDOR_ENGINE || CDN_ENGINE;
+// If the bundled engine fails to load at runtime, fall back to the CDN.
+export const MEDIAPIPE_FALLBACK = VENDOR_ENGINE ? CDN_ENGINE : null;
 
 // True when running inside the Electron desktop build.
 export const IS_ELECTRON = !!OVERRIDES.electron;
@@ -50,6 +56,8 @@ export const MSG = {
   PING: 'ping',
   PONG: 'pong', // { role }
   COMMAND: 'command', // { command, ...args } transient actions (e.g. capture)
+  DIAG_REQUEST: 'diag-request', // control asks the display for its runtime state
+  DIAG_REPORT: 'diag-report', // { diag } display's runtime state
 };
 
 // Default display settings. The control panel edits a copy of this shape.
@@ -64,9 +72,10 @@ export const DEFAULT_SETTINGS = {
   paintMode: 'single', // 'single' (activePaintId) | 'randomPerFace' (enabled set)
   activePaintId: null,
   enabledPaintIds: [], // used in randomPerFace mode (empty = all paints)
-  smoothing: 0.6, // 0 = raw landmarks, →1 = heavy temporal smoothing (One-Euro)
-  occlusion: true, // hide the far side of the face when the head turns (depth + backface cull)
-  edgeFeather: 0.6, // 0 = hard edge, 1 = soft fade into the skin at the paint's edge
+  smoothing: 0.4, // 0 = raw landmarks, →1 = heavy temporal smoothing (One-Euro). Lower = snappier.
+  occlusion: true, // depth-based occlusion (hides folds/far side; never deletes the visible face)
+  edgeFeather: 0.45, // gradient width: 0 = hard edge, →1 = soft gradient reaching further into the face
+  edgeOpacity: 0, // alpha at the very edge of the paint: 0 = fades to transparent, 1 = opaque edge
   showFps: false,
   meshDebug: false, // draw wireframe instead of texture
   bgColor: '#000000', // shown when no camera / letterboxing

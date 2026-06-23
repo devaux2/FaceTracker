@@ -1,8 +1,8 @@
 // FaceTracker — WebGL compositor.
 // Draws, onto a transparent canvas layered over the webcam <video>:
 //   * per-face paint textures warped across the 468-point face mesh, with
-//     depth-based self-occlusion, pose-adaptive backface culling, and a feathered
-//     edge so the paint blends into the skin instead of looking pasted on;
+//     depth-based occlusion (no backface culling — depth can't delete the
+//     visible face) and a feathered edge so the paint blends into the skin;
 //   * anchored sticker quads (drawn on top, no depth).
 // The webcam image, colour filter and overlays are handled in the DOM, so this
 // module only renders the things that must follow the geometry.
@@ -13,16 +13,22 @@ import { STICKER_ANCHORS, LM } from './config.js';
 // Depth scale applied to MediaPipe's z (roughly same scale as x). Only relative
 // ordering matters; clamped to stay in clip range.
 const Z_SCALE = 2.5;
-const FEATHER_RINGS = 6; // how many mesh rings in from the silhouette to fade
 
 const VERT_TEX = `
 attribute vec3 a_pos;
 attribute vec2 a_uv;
 attribute float a_edge;
+uniform vec2 u_uvScale;   // >1 = paint larger on the face
+uniform vec2 u_uvOffset;  // shift the paint across the face
+uniform float u_uvRot;    // radians
 varying vec2 v_uv;
 varying float v_edge;
 void main() {
-  v_uv = a_uv;
+  vec2 p = a_uv - 0.5;
+  float cs = cos(u_uvRot), sn = sin(u_uvRot);
+  p = vec2(cs * p.x - sn * p.y, sn * p.x + cs * p.y);
+  p = p / u_uvScale;
+  v_uv = p + 0.5 - u_uvOffset;
   v_edge = a_edge;
   gl_Position = vec4(a_pos, 1.0);
 }`;
@@ -33,10 +39,15 @@ varying vec2 v_uv;
 varying float v_edge;
 uniform sampler2D u_tex;
 uniform float u_alpha;
-uniform float u_feather; // 0 = hard edge, 1 = full feather
+uniform float u_feather;     // gradient width: 0 = hard edge, 1 = fade across the whole face
+uniform float u_edgeOpacity; // alpha at the very edge: 0 = fades to transparent, 1 = opaque edge
 void main() {
   vec4 c = texture2D(u_tex, v_uv);
-  float fade = mix(1.0, v_edge, u_feather);
+  // v_edge: 0 at the paint's silhouette -> 1 at the centre.
+  // u_feather sets how far the gradient reaches in; u_edgeOpacity sets where the
+  // fade bottoms out at the edge. Together: solid centre, tunable soft edge.
+  float ramp = smoothstep(0.0, max(u_feather, 0.001), v_edge);
+  float fade = mix(u_edgeOpacity, 1.0, ramp);
   gl_FragColor = vec4(c.rgb, c.a * u_alpha * fade);
 }`;
 
@@ -109,8 +120,9 @@ function buildEdges() {
   return new Uint16Array(edges);
 }
 
-// Per-vertex feather weight: 0 on the mesh silhouette, ramping to 1 over
-// FEATHER_RINGS rings inward (graph distance from the boundary loop).
+// Per-vertex feather weight: 0 on the mesh silhouette, 1 at the deepest interior
+// point (normalized graph distance from the boundary loop). The shader turns
+// this into a controllable soft-edge gradient.
 function buildEdgeWeights() {
   const edgeUse = new Map();
   const adj = Array.from({ length: LANDMARK_COUNT }, () => new Set());
@@ -138,10 +150,12 @@ function buildEdgeWeights() {
     const v = queue[qi];
     for (const n of adj[v]) if (dist[n] === -1) { dist[n] = dist[v] + 1; queue.push(n); }
   }
+  let maxD = 1;
+  for (let i = 0; i < LANDMARK_COUNT; i++) if (dist[i] > maxD) maxD = dist[i];
   const w = new Float32Array(LANDMARK_COUNT);
   for (let i = 0; i < LANDMARK_COUNT; i++) {
-    const d = dist[i] < 0 ? FEATHER_RINGS : dist[i];
-    w[i] = Math.min(1, d / FEATHER_RINGS);
+    const d = dist[i] < 0 ? maxD : dist[i];
+    w[i] = d / maxD;
   }
   return w;
 }
@@ -161,6 +175,10 @@ export function createRenderer(canvas) {
       sampler: gl.getUniformLocation(texProg, 'u_tex'),
       alpha: gl.getUniformLocation(texProg, 'u_alpha'),
       feather: gl.getUniformLocation(texProg, 'u_feather'),
+      edgeOpacity: gl.getUniformLocation(texProg, 'u_edgeOpacity'),
+      uvScale: gl.getUniformLocation(texProg, 'u_uvScale'),
+      uvOffset: gl.getUniformLocation(texProg, 'u_uvOffset'),
+      uvRot: gl.getUniformLocation(texProg, 'u_uvRot'),
     },
     flat: { pos: gl.getAttribLocation(flatProg, 'a_pos'), color: gl.getUniformLocation(flatProg, 'u_color') },
   };
@@ -241,17 +259,6 @@ export function createRenderer(canvas) {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
 
-  // Winding sign of a known front-facing triangle (nose + eye inners), in the
-  // current screen projection — lets us cull back-facing triangles correctly
-  // regardless of mirror/pose without ever blanking the visible face.
-  function frontIsCCW(out) {
-    const a = LM.noseTip, b = LM.leftEyeInner, c = LM.rightEyeInner;
-    const ax = out[a * 3], ay = out[a * 3 + 1];
-    const bx = out[b * 3], by = out[b * 3 + 1];
-    const cx = out[c * 3], cy = out[c * 3 + 1];
-    return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) > 0;
-  }
-
   function bindMeshAttribs() {
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
     gl.bufferData(gl.ARRAY_BUFFER, posScratch, gl.DYNAMIC_DRAW);
@@ -265,19 +272,23 @@ export function createRenderer(canvas) {
     gl.vertexAttribPointer(loc.tex.edge, 1, gl.FLOAT, false, 0, 0);
   }
 
-  function drawFaceTexture(track, mapper, texId, alpha, feather, occlusion) {
+  function drawFaceTexture(track, mapper, texId, alpha, feather, edgeOpacity, fit) {
     const rec = textures.get(texId);
     if (!rec) return;
     mapper.toClipInto(track.lm, posScratch, LANDMARK_COUNT);
 
     gl.useProgram(texProg);
-    if (occlusion) gl.frontFace(frontIsCCW(posScratch) ? gl.CCW : gl.CW);
+    const sc = fit && fit.scale ? fit.scale : 1;
+    gl.uniform2f(loc.tex.uvScale, sc, sc);
+    gl.uniform2f(loc.tex.uvOffset, (fit && fit.ox) || 0, (fit && fit.oy) || 0);
+    gl.uniform1f(loc.tex.uvRot, (((fit && fit.rot) || 0) * Math.PI) / 180);
     bindMeshAttribs();
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, rec.tex);
     gl.uniform1i(loc.tex.sampler, 0);
     gl.uniform1f(loc.tex.alpha, alpha);
     gl.uniform1f(loc.tex.feather, feather);
+    gl.uniform1f(loc.tex.edgeOpacity, edgeOpacity || 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
     gl.drawElements(gl.TRIANGLES, FACE_TRIANGLES.length, gl.UNSIGNED_SHORT, 0);
   }
@@ -332,6 +343,10 @@ export function createRenderer(canvas) {
     }
 
     gl.useProgram(texProg);
+    // Stickers share the paint shader — reset the per-paint UV transform.
+    gl.uniform2f(loc.tex.uvScale, 1, 1);
+    gl.uniform2f(loc.tex.uvOffset, 0, 0);
+    gl.uniform1f(loc.tex.uvRot, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, quadPosBuf);
     gl.bufferData(gl.ARRAY_BUFFER, quadScratch, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(loc.tex.pos);
@@ -347,33 +362,32 @@ export function createRenderer(canvas) {
     gl.uniform1i(loc.tex.sampler, 0);
     gl.uniform1f(loc.tex.alpha, sticker.opacity ?? 1);
     gl.uniform1f(loc.tex.feather, 0);
+    gl.uniform1f(loc.tex.edgeOpacity, 1);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quadIdxBuf);
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
   }
 
-  function render({ tracks, mapper, paintFor, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edgeFeather = 0.6 }) {
+  function render({ tracks, mapper, paintFor, getFit, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edgeFeather = 0.45, edgeOpacity = 0 }) {
     beginFrame();
 
-    // Pass 1: warped face paint (with depth + adaptive backface culling).
+    // Pass 1: warped face paint. Depth-test gives real self/turn occlusion
+    // (nearer triangles win where the mesh folds over itself) but can never
+    // delete the visible face. We intentionally do NOT backface-cull.
     if (!meshDebug) {
       if (occlusion) {
         gl.enable(gl.DEPTH_TEST);
         gl.depthFunc(gl.LEQUAL);
-        gl.enable(gl.CULL_FACE);
-        gl.cullFace(gl.BACK);
       } else {
         gl.disable(gl.DEPTH_TEST);
-        gl.disable(gl.CULL_FACE);
       }
       for (const track of tracks) {
         const pid = paintFor ? paintFor(track) : null;
-        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edgeFeather, occlusion);
+        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edgeFeather, edgeOpacity, getFit ? getFit(pid) : null);
       }
     }
 
     // Pass 2: stickers + debug wireframe always sit on top.
     gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
     for (const track of tracks) {
       for (const s of stickers) if (s.enabled !== false && textures.has(s.id)) drawSticker(track, s, mapper);
       if (meshDebug) drawWire(track, mapper);

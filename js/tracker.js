@@ -9,20 +9,34 @@
 // Landmarks are stored interleaved as x,y,z (stride 3) so the renderer can use
 // depth for occlusion.
 
-import { MEDIAPIPE, LM } from './config.js';
+import { MEDIAPIPE, MEDIAPIPE_FALLBACK, LM } from './config.js';
 
-export async function loadFaceLandmarker({ numFaces = 5, delegate = 'GPU' } = {}) {
-  const vision = await import(/* @vite-ignore */ MEDIAPIPE.module);
+async function createWith(cfg, numFaces, delegate) {
+  const vision = await import(/* @vite-ignore */ cfg.module);
   const { FaceLandmarker, FilesetResolver } = vision;
-  const fileset = await FilesetResolver.forVisionTasks(MEDIAPIPE.wasm);
-  const landmarker = await FaceLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: MEDIAPIPE.model, delegate },
+  const fileset = await FilesetResolver.forVisionTasks(cfg.wasm);
+  return FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: cfg.model, delegate },
     runningMode: 'VIDEO',
     numFaces,
     outputFaceBlendshapes: false,
     outputFacialTransformationMatrixes: false,
   });
-  return landmarker;
+}
+
+export async function loadFaceLandmarker({ numFaces = 5, delegate = 'GPU' } = {}) {
+  const primaryLabel = MEDIAPIPE_FALLBACK ? 'bundled (offline)' : 'CDN';
+  try {
+    const landmarker = await createWith(MEDIAPIPE, numFaces, delegate);
+    return { landmarker, source: primaryLabel, module: MEDIAPIPE.module };
+  } catch (e) {
+    if (MEDIAPIPE_FALLBACK) {
+      console.warn('Bundled face engine failed to load; falling back to CDN.', e);
+      const landmarker = await createWith(MEDIAPIPE_FALLBACK, numFaces, delegate);
+      return { landmarker, source: 'CDN (fallback — bundled failed)', module: MEDIAPIPE_FALLBACK.module };
+    }
+    throw e;
+  }
 }
 
 const CENTROID_PTS = [LM.noseTip, LM.leftEyeOuter, LM.rightEyeOuter];
@@ -67,7 +81,7 @@ class OneEuro {
 }
 
 export class FaceTracks {
-  constructor({ smoothing = 0.6, matchDist = 0.14, keepFrames = 3 } = {}) {
+  constructor({ smoothing = 0.4, matchDist = 0.14, keepFrames = 3 } = {}) {
     this.matchDist = matchDist;
     this.keepFrames = keepFrames;
     this.tracks = new Map(); // id -> track
@@ -78,10 +92,11 @@ export class FaceTracks {
 
   setSmoothing(s) {
     s = Math.min(0.95, Math.max(0, s));
-    // Higher smoothing -> lower minimum cutoff (more damping when still).
-    // beta keeps fast motion responsive (a touch more lead when less smooth).
-    this.minCutoff = 2.4 - s * 2.1; // s=0 -> 2.4, s=0.95 -> ~0.4
-    this.beta = 0.015 + (1 - s) * 0.05;
+    // One-Euro: minCutoff sets how much jitter is damped when still; beta sets
+    // how quickly it tracks motion (high beta = little lag while moving). These
+    // are tuned to feel responsive — raise smoothing only if it looks jittery.
+    this.minCutoff = 1.0 + (1 - s) * 6.0; // s=0 -> 7 (very snappy), s=0.95 -> ~1.3
+    this.beta = 0.05 + (1 - s) * 0.7; // strong motion lead so it doesn't drag
     for (const t of this.tracks.values()) t.filt.setParams(this.minCutoff, this.beta);
   }
 

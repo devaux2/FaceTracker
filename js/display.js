@@ -9,6 +9,23 @@ import { loadFaceLandmarker, FaceTracks } from './tracker.js';
 import { createRenderer, createMapper } from './renderer.js';
 import { createOverlayLayer } from './overlays.js';
 
+// Capture recent errors/warnings for the diagnostics report.
+const diagLogs = [];
+function diagLog(kind, parts) {
+  try {
+    diagLogs.push((`${new Date().toISOString().slice(11, 19)} ${kind}: ` + parts.map((p) => (p && p.message ? p.message : String(p))).join(' ')).slice(0, 300));
+    while (diagLogs.length > 40) diagLogs.shift();
+  } catch {}
+}
+{
+  const ce = console.error.bind(console);
+  console.error = (...a) => { diagLog('ERR', a); ce(...a); };
+  const cw = console.warn.bind(console);
+  console.warn = (...a) => { diagLog('WARN', a); cw(...a); };
+}
+window.addEventListener('error', (e) => diagLog('ERR', [e.message || e.error || 'error']));
+window.addEventListener('unhandledrejection', (e) => diagLog('ERR', ['unhandledrejection: ' + ((e.reason && e.reason.message) || e.reason)]));
+
 const video = document.getElementById('cam');
 const glCanvas = document.getElementById('gl');
 const overlayEl = document.getElementById('overlays');
@@ -37,6 +54,7 @@ let paints = [];
 let stickers = [];
 let paintsById = new Map();
 const paintAssign = new Map(); // trackId -> paintId (randomPerFace mode)
+const loadedTexVersions = new Map(); // id -> updatedAt last decoded (skip needless re-decodes)
 
 let running = false;
 let lastTs = 0;
@@ -45,6 +63,9 @@ let fps = 0,
   fpsAccum = 0,
   fpsCount = 0,
   fpsLast = performance.now();
+let engineSource = null;
+let engineModule = '';
+let lastFaceCount = 0;
 
 // ---------------------------------------------------------------------------
 // Asset loading
@@ -59,16 +80,23 @@ async function decodeTo(rec, id) {
   }
 }
 
+async function decodeIfChanged(rec) {
+  const v = rec.updatedAt || 0;
+  if (loadedTexVersions.get(rec.id) === v) return; // image unchanged (e.g. a name/fit edit)
+  await decodeTo(rec, rec.id);
+  loadedTexVersions.set(rec.id, v);
+}
+
 async function loadPaints() {
   paints = await getAll(STORES.paints);
   paintsById = new Map(paints.map((p) => [p.id, p]));
-  for (const p of paints) await decodeTo(p, p.id);
+  for (const p of paints) await decodeIfChanged(p);
   syncTextures();
 }
 
 async function loadStickers() {
   stickers = await getAll(STORES.stickers);
-  for (const s of stickers) await decodeTo(s, s.id);
+  for (const s of stickers) await decodeIfChanged(s);
   syncTextures();
 }
 
@@ -148,7 +176,10 @@ async function ensureLandmarker() {
     } catch {}
     landmarker = null;
   }
-  landmarker = await loadFaceLandmarker({ numFaces: settings.numFaces, delegate: settings.detectorDelegate });
+  const res = await loadFaceLandmarker({ numFaces: settings.numFaces, delegate: settings.detectorDelegate });
+  landmarker = res.landmarker;
+  engineSource = res.source;
+  engineModule = res.module;
   needLandmarkerReload = false;
 }
 
@@ -187,6 +218,7 @@ function frame() {
       console.error('detect error', e);
     }
     const active = tracks.update(result ? result.faceLandmarks : [], ts);
+    lastFaceCount = active.length;
 
     // Drop paint assignments for faces that are gone.
     if (paintAssign.size) {
@@ -199,11 +231,13 @@ function frame() {
       tracks: active,
       mapper,
       paintFor,
+      getFit: (pid) => paintsById.get(pid)?.fit,
       opacity: settings.paintOpacity,
       stickers,
       meshDebug: settings.meshDebug,
       occlusion: settings.occlusion !== false,
-      edgeFeather: settings.edgeFeather ?? 0.6,
+      edgeFeather: settings.edgeFeather ?? 0.45,
+      edgeOpacity: settings.edgeOpacity ?? 0,
     });
 
     // FPS
@@ -270,9 +304,39 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+// Snapshot of the display's runtime state for the diagnostics report.
+function buildDiag() {
+  let webgl = 'n/a';
+  try {
+    const gl = renderer && renderer.gl;
+    if (gl) {
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      const r = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+      const v2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+      webgl = `${v2 ? 'WebGL2' : 'WebGL1'} — ${r}`;
+    }
+  } catch {}
+  const track = video.srcObject && video.srcObject.getVideoTracks ? video.srcObject.getVideoTracks()[0] : null;
+  const ts = track && track.getSettings ? track.getSettings() : {};
+  return {
+    version: (window.FT_CONFIG && window.FT_CONFIG.version) || 'web',
+    running,
+    engine: engineSource || '(not loaded yet)',
+    engineModule,
+    webgl,
+    cameraLabel: track ? track.label || '(unnamed)' : '(no camera)',
+    resolution: video.videoWidth ? `${video.videoWidth}x${video.videoHeight}` : '(no video)',
+    cameraFps: ts.frameRate ? Math.round(ts.frameRate) : null,
+    fps,
+    faces: lastFaceCount,
+    recentLogs: diagLogs.slice(-15),
+  };
+}
+
 // Live updates from the control panel.
 bus.on(async (msg) => {
   if (msg.type === MSG.PING && msg.role !== 'display') bus.pong();
+  if (msg.type === MSG.DIAG_REQUEST) bus.post(MSG.DIAG_REPORT, { diag: buildDiag() });
   if (msg.type === MSG.CHANGED) {
     if (msg.store === STORES.settings) await loadSettings();
     else if (msg.store === STORES.paints) await loadPaints();
