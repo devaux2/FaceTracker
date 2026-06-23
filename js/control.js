@@ -8,6 +8,7 @@ import * as store from './store.js';
 import { createBus, trackPresence } from './bus.js';
 import { buildTemplateCanvas, buildSamplePaintCanvas, downloadCanvas } from './template.js';
 import { createOverlayLayer } from './overlays.js';
+import { detectFaceOnImage } from './tracker.js';
 
 const bus = createBus('control');
 
@@ -86,6 +87,54 @@ async function savePaintFit(p) {
   await store.put(STORES.paints, p);
   bus.changed(STORES.paints);
 }
+
+// Auto-fit: detect the paint image's own face and store its landmark positions
+// as that paint's texture coordinates, so every painted feature maps exactly
+// onto the matching face landmark. Falls back to the default mapping if no face.
+const fitStatus = new Map(); // paintId -> status text
+function updateFitStatus(id) {
+  const node = document.getElementById('fitstatus-' + id);
+  if (node) node.textContent = fitStatus.get(id) || '';
+}
+async function autoFitPaint(id) {
+  fitStatus.set(id, 'Aligning…');
+  updateFitStatus(id);
+  try {
+    const p = await store.get(STORES.paints, id);
+    if (!p || !p.blob) return;
+    const bmp = await createImageBitmap(p.blob);
+    const lm = await detectFaceOnImage(bmp);
+    if (bmp.close) bmp.close();
+    if (!lm) {
+      fitStatus.set(id, 'No face detected — using default mapping');
+      updateFitStatus(id);
+      return;
+    }
+    const uv = new Array(468 * 2);
+    for (let i = 0; i < 468; i++) {
+      uv[i * 2] = lm[i].x;
+      uv[i * 2 + 1] = lm[i].y;
+    }
+    p.uvCoords = uv;
+    await store.put(STORES.paints, p);
+    bus.changed(STORES.paints);
+    fitStatus.set(id, 'Auto-aligned ✓');
+    updateFitStatus(id);
+  } catch (e) {
+    console.error('auto-fit failed', e);
+    fitStatus.set(id, 'Auto-fit failed (is the engine reachable?)');
+    updateFitStatus(id);
+  }
+}
+async function clearAutoFit(id) {
+  const p = await store.get(STORES.paints, id);
+  if (!p) return;
+  delete p.uvCoords;
+  await store.put(STORES.paints, p);
+  bus.changed(STORES.paints);
+  fitStatus.set(id, 'Using default mapping');
+  await refresh();
+}
 async function saveOverlay(rec) {
   await store.put(STORES.overlays, { ...rec, updatedAt: Date.now() });
   bus.changed(STORES.overlays);
@@ -162,6 +211,12 @@ function paintCard(p) {
   };
   const fitUI = el('details', { class: 'fit' }, [
     el('summary', {}, 'Adjust fit'),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'btn sm', onclick: () => autoFitPaint(p.id) }, '✨ Auto-fit to design'),
+      p.uvCoords ? el('button', { class: 'btn ghost sm', onclick: () => clearAutoFit(p.id) }, 'Use default') : null,
+      el('span', { id: 'fitstatus-' + p.id, class: 'hint' }, fitStatus.get(p.id) || (p.uvCoords ? 'Auto-aligned ✓' : '')),
+    ]),
+    el('p', { class: 'hint' }, 'Fine-tune on top of auto-fit:'),
     field('Offset X', slider(fit.ox, -0.2, 0.2, 0.005, (v) => updFit({ ox: v }))),
     field('Offset Y', slider(fit.oy, -0.2, 0.2, 0.005, (v) => updFit({ oy: v }))),
     field('Scale', slider(fit.scale, 0.7, 1.4, 0.01, (v) => updFit({ scale: v }))),
@@ -528,17 +583,20 @@ async function savePaintBlob(blob, name) {
 }
 async function addPaints(e) {
   const files = [...(e.target.files || [])];
-  for (const f of files) await savePaintBlob(f, f.name.replace(/\.[^.]+$/, ''));
+  const ids = [];
+  for (const f of files) ids.push(await savePaintBlob(f, f.name.replace(/\.[^.]+$/, '')));
   bus.changed(STORES.paints);
   bus.changed(STORES.settings);
   await refresh();
+  for (const id of ids) await autoFitPaint(id); // auto-align each uploaded paint
 }
 function addSamplePaint() {
   buildSamplePaintCanvas({ size: 1024 }).toBlob(async (blob) => {
-    await savePaintBlob(blob, 'Sample skull');
+    const id = await savePaintBlob(blob, 'Sample skull');
     bus.changed(STORES.paints);
     bus.changed(STORES.settings);
     await refresh();
+    await autoFitPaint(id);
   }, 'image/png');
 }
 async function deletePaint(p) {

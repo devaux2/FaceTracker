@@ -232,6 +232,7 @@ function frame() {
       mapper,
       paintFor,
       getFit: (pid) => paintsById.get(pid)?.fit,
+      getUv: (pid) => paintsById.get(pid)?.uvCoords,
       opacity: settings.paintOpacity,
       stickers,
       meshDebug: settings.meshDebug,

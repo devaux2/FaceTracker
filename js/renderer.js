@@ -220,6 +220,7 @@ export function createRenderer(canvas) {
   const posScratch = new Float32Array(LANDMARK_COUNT * 3);
   const quadScratch = new Float32Array(12); // 4 verts * xyz
   const textures = new Map();
+  const customUvBufs = new Map(); // texId -> { buf, ref } per-paint texture coords (auto-fit)
 
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -251,6 +252,12 @@ export function createRenderer(canvas) {
   function pruneTextures(keepIds) {
     const keep = new Set(keepIds);
     for (const id of [...textures.keys()]) if (!keep.has(id)) deleteTexture(id);
+    for (const id of [...customUvBufs.keys()]) {
+      if (!keep.has(id)) {
+        gl.deleteBuffer(customUvBufs.get(id).buf);
+        customUvBufs.delete(id);
+      }
+    }
   }
 
   function resize(w, h) {
@@ -262,12 +269,12 @@ export function createRenderer(canvas) {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
 
-  function bindMeshAttribs() {
+  function bindMeshAttribs(uvBuffer) {
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
     gl.bufferData(gl.ARRAY_BUFFER, posScratch, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(loc.tex.pos);
     gl.vertexAttribPointer(loc.tex.pos, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer || uvBuf);
     gl.enableVertexAttribArray(loc.tex.uv);
     gl.vertexAttribPointer(loc.tex.uv, 2, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, edgeBuf);
@@ -275,7 +282,24 @@ export function createRenderer(canvas) {
     gl.vertexAttribPointer(loc.tex.edge, 1, gl.FLOAT, false, 0, 0);
   }
 
-  function drawFaceTexture(track, mapper, texId, alpha, edge, fit) {
+  // Returns the UV buffer to use for a paint: a per-paint buffer when auto-fit
+  // texture coords are present, else the shared canonical UVs.
+  function uvBufferFor(texId, uvCoords) {
+    if (!uvCoords || uvCoords.length < LANDMARK_COUNT * 2) return uvBuf;
+    let rec = customUvBufs.get(texId);
+    if (!rec) {
+      rec = { buf: gl.createBuffer(), ref: null };
+      customUvBufs.set(texId, rec);
+    }
+    if (rec.ref !== uvCoords) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, rec.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, uvCoords instanceof Float32Array ? uvCoords : new Float32Array(uvCoords), gl.STATIC_DRAW);
+      rec.ref = uvCoords;
+    }
+    return rec.buf;
+  }
+
+  function drawFaceTexture(track, mapper, texId, alpha, edge, fit, uvCoords) {
     const rec = textures.get(texId);
     if (!rec) return;
     mapper.toClipInto(track.lm, posScratch, LANDMARK_COUNT);
@@ -285,7 +309,7 @@ export function createRenderer(canvas) {
     gl.uniform2f(loc.tex.uvScale, sc, sc);
     gl.uniform2f(loc.tex.uvOffset, (fit && fit.ox) || 0, (fit && fit.oy) || 0);
     gl.uniform1f(loc.tex.uvRot, (((fit && fit.rot) || 0) * Math.PI) / 180);
-    bindMeshAttribs();
+    bindMeshAttribs(uvBufferFor(texId, uvCoords));
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, rec.tex);
     gl.uniform1i(loc.tex.sampler, 0);
@@ -372,7 +396,7 @@ export function createRenderer(canvas) {
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
   }
 
-  function render({ tracks, mapper, paintFor, getFit, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edge = { opacity: 0, start: 0, end: 0.5, hardness: 0 } }) {
+  function render({ tracks, mapper, paintFor, getFit, getUv, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edge = { opacity: 0, start: 0, end: 0.5, hardness: 0 } }) {
     beginFrame();
 
     // Pass 1: warped face paint. Depth-test gives real self/turn occlusion
@@ -387,7 +411,7 @@ export function createRenderer(canvas) {
       }
       for (const track of tracks) {
         const pid = paintFor ? paintFor(track) : null;
-        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edge, getFit ? getFit(pid) : null);
+        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edge, getFit ? getFit(pid) : null, getUv ? getUv(pid) : null);
       }
     }
 

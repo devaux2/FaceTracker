@@ -39,6 +39,36 @@ export async function loadFaceLandmarker({ numFaces = 5, delegate = 'GPU' } = {}
   }
 }
 
+// Image-mode detector, used by the control panel to auto-fit an uploaded paint.
+let _imgDetector = null;
+async function createImageDetector(cfg) {
+  const vision = await import(/* @vite-ignore */ cfg.module);
+  const { FaceLandmarker, FilesetResolver } = vision;
+  const fileset = await FilesetResolver.forVisionTasks(cfg.wasm);
+  return FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: cfg.model, delegate: 'GPU' },
+    runningMode: 'IMAGE',
+    numFaces: 1,
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: false,
+  });
+}
+
+// Detect a single face in a still image (ImageBitmap/HTMLImageElement/canvas).
+// Returns the landmark array (normalized 0..1, origin top-left) or null.
+export async function detectFaceOnImage(image) {
+  if (!_imgDetector) {
+    try {
+      _imgDetector = await createImageDetector(MEDIAPIPE);
+    } catch (e) {
+      if (MEDIAPIPE_FALLBACK) _imgDetector = await createImageDetector(MEDIAPIPE_FALLBACK);
+      else throw e;
+    }
+  }
+  const res = _imgDetector.detect(image);
+  return res && res.faceLandmarks && res.faceLandmarks[0] ? res.faceLandmarks[0] : null;
+}
+
 const CENTROID_PTS = [LM.noseTip, LM.leftEyeOuter, LM.rightEyeOuter];
 
 // One-Euro filter over a flat array of values, each with its own state.
