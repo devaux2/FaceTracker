@@ -16,6 +16,7 @@ if (app.isPackaged) {
 }
 
 const APP_ROOT = path.join(__dirname, '..');
+const ICON_PATH = path.join(APP_ROOT, 'build', 'icon.png');
 let server = null;
 let port = 0;
 let controlWin = null;
@@ -30,6 +31,7 @@ function createControlWindow() {
     minWidth: 720,
     minHeight: 560,
     title: 'FaceTracker — Control',
+    icon: ICON_PATH,
     backgroundColor: '#0c0d12',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
@@ -60,6 +62,7 @@ function openDisplayWindow() {
     fullscreen: hasExternal,
     backgroundColor: '#000000',
     title: 'FaceTracker — Display',
+    icon: ICON_PATH,
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });

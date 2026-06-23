@@ -61,6 +61,9 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16
 .launch-card h2 { margin: 6px 0; }
 .launch-card p { color: var(--muted); min-height: 60px; }
 .lc-icon { font-size: 40px; }
+.brand-logo { display: block; width: 92px; height: 92px; margin: 0 auto 10px; border-radius: 18px; }
+.gate-logo { display: block; width: 104px; height: 104px; margin: 0 auto 10px; border-radius: 22px; }
+.brand-mini { width: 22px; height: 22px; vertical-align: -5px; margin-right: 8px; border-radius: 5px; }
 .quickstart { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 24px; text-align: left; }
 .quickstart ol { margin: 10px 0; padding-left: 20px; line-height: 1.7; }
 .note { color: var(--muted); font-size: 14px; }
