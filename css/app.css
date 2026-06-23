@@ -67,8 +67,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16
 @media (max-width: 640px) { .launch-cards { grid-template-columns: 1fr; } .launcher h1 { font-size: 40px; } }
 
 /* ===== Control ========================================================== */
-.control { display: flex; flex-direction: column; height: 100%; }
-.topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.control { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { font-weight: 800; }
 .brand span { color: var(--muted); font-weight: 600; }
 .spacer { flex: 1; }
@@ -76,10 +76,10 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
 .dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
 .dot.off { background: #555; }
-.tabbar { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabbar { flex: 0 0 auto; display: flex; gap: 4px; padding: 8px 12px 0; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
 .tab { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font: inherit; font-weight: 700; cursor: pointer; border-radius: 8px 8px 0 0; white-space: nowrap; }
 .tab.active { color: var(--text); background: var(--panel-2); }
-.content { padding: 20px; overflow-y: auto; max-width: 1100px; width: 100%; margin: 0 auto; }
+.content { flex: 1 1 0; min-height: 0; padding: 20px; overflow-y: auto; max-width: 1100px; width: 100%; margin: 0 auto; }
 .content h2 { margin-top: 0; }
 
 .field { display: block; margin: 14px 0; }
