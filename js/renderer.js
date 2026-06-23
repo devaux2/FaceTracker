@@ -1,8 +1,8 @@
 // FaceTracker — WebGL compositor.
 // Draws, onto a transparent canvas layered over the webcam <video>:
 //   * per-face paint textures warped across the 468-point face mesh, with
-//     depth-based self-occlusion, pose-adaptive backface culling, and a feathered
-//     edge so the paint blends into the skin instead of looking pasted on;
+//     depth-based occlusion (no backface culling — depth can't delete the
+//     visible face) and a feathered edge so the paint blends into the skin;
 //   * anchored sticker quads (drawn on top, no depth).
 // The webcam image, colour filter and overlays are handled in the DOM, so this
 // module only renders the things that must follow the geometry.
@@ -241,17 +241,6 @@ export function createRenderer(canvas) {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
 
-  // Winding sign of a known front-facing triangle (nose + eye inners), in the
-  // current screen projection — lets us cull back-facing triangles correctly
-  // regardless of mirror/pose without ever blanking the visible face.
-  function frontIsCCW(out) {
-    const a = LM.noseTip, b = LM.leftEyeInner, c = LM.rightEyeInner;
-    const ax = out[a * 3], ay = out[a * 3 + 1];
-    const bx = out[b * 3], by = out[b * 3 + 1];
-    const cx = out[c * 3], cy = out[c * 3 + 1];
-    return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) > 0;
-  }
-
   function bindMeshAttribs() {
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
     gl.bufferData(gl.ARRAY_BUFFER, posScratch, gl.DYNAMIC_DRAW);
@@ -265,13 +254,12 @@ export function createRenderer(canvas) {
     gl.vertexAttribPointer(loc.tex.edge, 1, gl.FLOAT, false, 0, 0);
   }
 
-  function drawFaceTexture(track, mapper, texId, alpha, feather, occlusion) {
+  function drawFaceTexture(track, mapper, texId, alpha, feather) {
     const rec = textures.get(texId);
     if (!rec) return;
     mapper.toClipInto(track.lm, posScratch, LANDMARK_COUNT);
 
     gl.useProgram(texProg);
-    if (occlusion) gl.frontFace(frontIsCCW(posScratch) ? gl.CCW : gl.CW);
     bindMeshAttribs();
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, rec.tex);
@@ -354,26 +342,24 @@ export function createRenderer(canvas) {
   function render({ tracks, mapper, paintFor, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edgeFeather = 0.6 }) {
     beginFrame();
 
-    // Pass 1: warped face paint (with depth + adaptive backface culling).
+    // Pass 1: warped face paint. Depth-test gives real self/turn occlusion
+    // (nearer triangles win where the mesh folds over itself) but can never
+    // delete the visible face. We intentionally do NOT backface-cull.
     if (!meshDebug) {
       if (occlusion) {
         gl.enable(gl.DEPTH_TEST);
         gl.depthFunc(gl.LEQUAL);
-        gl.enable(gl.CULL_FACE);
-        gl.cullFace(gl.BACK);
       } else {
         gl.disable(gl.DEPTH_TEST);
-        gl.disable(gl.CULL_FACE);
       }
       for (const track of tracks) {
         const pid = paintFor ? paintFor(track) : null;
-        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edgeFeather, occlusion);
+        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edgeFeather);
       }
     }
 
     // Pass 2: stickers + debug wireframe always sit on top.
     gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
     for (const track of tracks) {
       for (const s of stickers) if (s.enabled !== false && textures.has(s.id)) drawSticker(track, s, mapper);
       if (meshDebug) drawWire(track, mapper);
