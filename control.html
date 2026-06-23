@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>FaceTracker — Control</title>
+<link rel="stylesheet" href="css/app.css" />
+</head>
+<body class="control">
+  <header class="topbar">
+    <div class="brand">FaceTracker <span>control</span></div>
+    <div class="status"><span id="statusDot" class="dot off"></span><span id="statusText">Display offline</span></div>
+    <div class="spacer"></div>
+    <button id="exportBtn" class="btn ghost sm">Export</button>
+    <button id="importBtn" class="btn ghost sm">Import</button>
+    <input id="importInput" type="file" accept="application/json" style="display:none" />
+    <button id="openDisplay" class="btn sm">Open Display ↗</button>
+  </header>
+
+  <nav id="tabs" class="tabbar"></nav>
+  <main id="content" class="content"></main>
+
+  <script type="module" src="js/control.js"></script>
+</body>
+</html>

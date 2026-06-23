@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>FaceTracker</title>
+<link rel="stylesheet" href="css/app.css" />
+</head>
+<body class="launcher">
+  <main class="launch-wrap">
+    <h1>FaceTracker</h1>
+    <p class="tagline">Live webcam face-paint mapping for installations &amp; photo booths.</p>
+
+    <div class="launch-cards">
+      <a class="launch-card" href="control.html">
+        <div class="lc-icon">🎛️</div>
+        <h2>Control panel</h2>
+        <p>Upload face paints, stickers and overlays. Tune the display. Open this on your laptop or phone.</p>
+        <span class="btn">Open control panel →</span>
+      </a>
+      <a class="launch-card" href="display.html" target="ftDisplay">
+        <div class="lc-icon">🪞</div>
+        <h2>Display</h2>
+        <p>The 24/7 screen guests see. Maps paints onto every face in the webcam feed in real time.</p>
+        <span class="btn">Open display →</span>
+      </a>
+    </div>
+
+    <div class="quickstart">
+      <h3>Quick start</h3>
+      <ol>
+        <li>Open the <b>Control panel</b> and the <b>Display</b> (use the button — keep both in this same browser).</li>
+        <li>On the display, allow the camera and press <b>F</b> for full screen.</li>
+        <li>In the control panel, download the paint template, paint on it, and upload a transparent PNG.</li>
+      </ol>
+      <p class="note">Tip: serve this folder over <code>http://localhost</code> (see README) so the camera and live sync work reliably.</p>
+    </div>
+  </main>
+</body>
+</html>

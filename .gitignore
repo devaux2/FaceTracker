@@ -1,0 +1,12 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+
+# Optional offline-vendored MediaPipe assets (see README "Running offline")
+/vendor/
+
+# Node (only if you add tooling later)
+node_modules/
