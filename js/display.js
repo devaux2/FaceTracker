@@ -236,8 +236,12 @@ function frame() {
       stickers,
       meshDebug: settings.meshDebug,
       occlusion: settings.occlusion !== false,
-      edgeFeather: settings.edgeFeather ?? 0.45,
-      edgeOpacity: settings.edgeOpacity ?? 0,
+      edge: {
+        opacity: settings.edgeOpacity ?? 0,
+        start: settings.gradStart ?? 0,
+        end: settings.gradEnd ?? 0.5,
+        hardness: settings.gradHardness ?? 0,
+      },
     });
 
     // FPS

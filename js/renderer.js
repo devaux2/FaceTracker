@@ -39,14 +39,16 @@ varying vec2 v_uv;
 varying float v_edge;
 uniform sampler2D u_tex;
 uniform float u_alpha;
-uniform float u_feather;     // gradient width: 0 = hard edge, 1 = fade across the whole face
-uniform float u_edgeOpacity; // alpha at the very edge: 0 = fades to transparent, 1 = opaque edge
+uniform float u_edgeOpacity;  // alpha at the faded edge (0 = transparent, 1 = opaque)
+uniform vec2 u_gradStops;     // (start, end) on the edge(0)->centre(1) distance
+uniform float u_gradHardness; // 0 = smooth ramp, 1 = harsh/step
 void main() {
   vec4 c = texture2D(u_tex, v_uv);
   // v_edge: 0 at the paint's silhouette -> 1 at the centre.
-  // u_feather sets how far the gradient reaches in; u_edgeOpacity sets where the
-  // fade bottoms out at the edge. Together: solid centre, tunable soft edge.
-  float ramp = smoothstep(0.0, max(u_feather, 0.001), v_edge);
+  float t = clamp((v_edge - u_gradStops.x) / max(u_gradStops.y - u_gradStops.x, 0.001), 0.0, 1.0);
+  float lo = mix(0.0, 0.5, u_gradHardness);
+  float hi = mix(1.0, 0.5, u_gradHardness);
+  float ramp = smoothstep(lo, hi, t);
   float fade = mix(u_edgeOpacity, 1.0, ramp);
   gl_FragColor = vec4(c.rgb, c.a * u_alpha * fade);
 }`;
@@ -174,8 +176,9 @@ export function createRenderer(canvas) {
       edge: gl.getAttribLocation(texProg, 'a_edge'),
       sampler: gl.getUniformLocation(texProg, 'u_tex'),
       alpha: gl.getUniformLocation(texProg, 'u_alpha'),
-      feather: gl.getUniformLocation(texProg, 'u_feather'),
       edgeOpacity: gl.getUniformLocation(texProg, 'u_edgeOpacity'),
+      gradStops: gl.getUniformLocation(texProg, 'u_gradStops'),
+      gradHardness: gl.getUniformLocation(texProg, 'u_gradHardness'),
       uvScale: gl.getUniformLocation(texProg, 'u_uvScale'),
       uvOffset: gl.getUniformLocation(texProg, 'u_uvOffset'),
       uvRot: gl.getUniformLocation(texProg, 'u_uvRot'),
@@ -272,7 +275,7 @@ export function createRenderer(canvas) {
     gl.vertexAttribPointer(loc.tex.edge, 1, gl.FLOAT, false, 0, 0);
   }
 
-  function drawFaceTexture(track, mapper, texId, alpha, feather, edgeOpacity, fit) {
+  function drawFaceTexture(track, mapper, texId, alpha, edge, fit) {
     const rec = textures.get(texId);
     if (!rec) return;
     mapper.toClipInto(track.lm, posScratch, LANDMARK_COUNT);
@@ -287,8 +290,9 @@ export function createRenderer(canvas) {
     gl.bindTexture(gl.TEXTURE_2D, rec.tex);
     gl.uniform1i(loc.tex.sampler, 0);
     gl.uniform1f(loc.tex.alpha, alpha);
-    gl.uniform1f(loc.tex.feather, feather);
-    gl.uniform1f(loc.tex.edgeOpacity, edgeOpacity || 0);
+    gl.uniform1f(loc.tex.edgeOpacity, (edge && edge.opacity) || 0);
+    gl.uniform2f(loc.tex.gradStops, (edge && edge.start) || 0, edge && edge.end != null ? edge.end : 0.5);
+    gl.uniform1f(loc.tex.gradHardness, (edge && edge.hardness) || 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
     gl.drawElements(gl.TRIANGLES, FACE_TRIANGLES.length, gl.UNSIGNED_SHORT, 0);
   }
@@ -361,13 +365,14 @@ export function createRenderer(canvas) {
     gl.bindTexture(gl.TEXTURE_2D, rec.tex);
     gl.uniform1i(loc.tex.sampler, 0);
     gl.uniform1f(loc.tex.alpha, sticker.opacity ?? 1);
-    gl.uniform1f(loc.tex.feather, 0);
     gl.uniform1f(loc.tex.edgeOpacity, 1);
+    gl.uniform2f(loc.tex.gradStops, 0, 1);
+    gl.uniform1f(loc.tex.gradHardness, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quadIdxBuf);
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
   }
 
-  function render({ tracks, mapper, paintFor, getFit, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edgeFeather = 0.45, edgeOpacity = 0 }) {
+  function render({ tracks, mapper, paintFor, getFit, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edge = { opacity: 0, start: 0, end: 0.5, hardness: 0 } }) {
     beginFrame();
 
     // Pass 1: warped face paint. Depth-test gives real self/turn occlusion
@@ -382,7 +387,7 @@ export function createRenderer(canvas) {
       }
       for (const track of tracks) {
         const pid = paintFor ? paintFor(track) : null;
-        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edgeFeather, edgeOpacity, getFit ? getFit(pid) : null);
+        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edge, getFit ? getFit(pid) : null);
       }
     }
 

@@ -43,6 +43,26 @@ function field(label, control, hint) {
 function slider(value, min, max, step, oninput) {
   return el('input', { type: 'range', min, max, step, value, oninput: (e) => oninput(parseFloat(e.target.value)) });
 }
+function smoothstep01(a, b, x) {
+  if (a === b) return x < a ? 0 : 1;
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+// CSS preview of the edge gradient: matches the shader (start/end position +
+// hardness + edge opacity), sampled across edge(left) -> centre(right).
+function edgeGradientCss(op, start, end, hardness) {
+  const lo = 0.5 * hardness;
+  const hi = 1 - 0.5 * hardness;
+  const N = 18;
+  const stops = [];
+  for (let i = 0; i <= N; i++) {
+    const x = i / N;
+    const t = Math.min(1, Math.max(0, (x - start) / Math.max(end - start, 0.001)));
+    const a = op + (1 - op) * smoothstep01(lo, hi, t);
+    stops.push(`rgba(255,45,139,${a.toFixed(3)}) ${(x * 100).toFixed(1)}%`);
+  }
+  return `linear-gradient(to right, ${stops.join(',')})`;
+}
 
 // ---- persistence wrappers -------------------------------------------------
 async function patchSettings(patch) {
@@ -295,17 +315,21 @@ function renderDisplay() {
     field(`Smoothing (${Math.round(s.smoothing * 100)}%)`, slider(s.smoothing, 0, 0.95, 0.05, (v) => patchSettings({ smoothing: v }))),
     el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: s.occlusion !== false, onchange: (e) => patchSettings({ occlusion: e.target.checked }) }), 'Occlusion — hide the far side when the head turns']),
     (() => {
+      const g = { op: s.edgeOpacity ?? 0, st: s.gradStart ?? 0, en: s.gradEnd ?? 0.5, hd: s.gradHardness ?? 0 };
       const grad = el('div', { class: 'edge-grad' });
       const prev = el('div', { class: 'edge-preview checker' }, grad);
-      const paint = (op, sf) => {
-        grad.style.background = `linear-gradient(to right, rgba(255,45,139,${op}) 0%, rgba(255,45,139,1) ${Math.round(sf * 100)}%, rgba(255,45,139,1) 100%)`;
-      };
-      paint(s.edgeOpacity ?? 0, s.edgeFeather ?? 0.45);
+      const paint = () => { grad.style.background = edgeGradientCss(g.op, g.st, g.en, g.hd); };
+      paint();
       return el('div', {}, [
-        el('span', { class: 'field-label' }, 'Edge blend — left = edge of paint, right = centre'),
+        el('span', { class: 'field-label' }, 'Edge blend — left = edge of paint, right = centre of face'),
         prev,
-        field('Edge opacity (transparency at the edge)', slider(s.edgeOpacity ?? 0, 0, 1, 0.02, (v) => { patchSettings({ edgeOpacity: v }); paint(v, state.settings.edgeFeather ?? 0.45); })),
-        field('Gradient width (how the fade is mapped)', slider(s.edgeFeather ?? 0.45, 0, 1, 0.02, (v) => { patchSettings({ edgeFeather: v }); paint(state.settings.edgeOpacity ?? 0, v); })),
+        field('Edge opacity', slider(g.op, 0, 1, 0.02, (v) => { g.op = v; paint(); patchSettings({ edgeOpacity: v }); }), 'transparency at the edge (the simple control)'),
+        el('div', { class: 'gradient-tool' }, [
+          el('span', { class: 'field-label' }, 'Gradient tool'),
+          field('Start', slider(g.st, 0, 1, 0.01, (v) => { g.st = v; paint(); patchSettings({ gradStart: v }); }), 'where the fade begins (edge → centre)'),
+          field('End', slider(g.en, 0, 1, 0.01, (v) => { g.en = v; paint(); patchSettings({ gradEnd: v }); }), 'where the paint becomes fully solid'),
+          field('Hardness', slider(g.hd, 0, 1, 0.02, (v) => { g.hd = v; paint(); patchSettings({ gradHardness: v }); }), 'smooth → harsh transition'),
+        ]),
       ]);
     })(),
     field('Detector', el('select', { onchange: (e) => patchSettings({ detectorDelegate: e.target.value }) }, ['GPU', 'CPU'].map((d) => el('option', { value: d, selected: s.detectorDelegate === d }, d)))),
