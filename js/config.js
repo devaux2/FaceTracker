@@ -11,22 +11,28 @@ const OVERRIDES = (typeof window !== 'undefined' && window.FT_CONFIG) || {};
 const MP_VERSION = '0.10.15';
 const MP_CDN = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 
-export const MEDIAPIPE = OVERRIDES.mediapipeVendorBase
+const CDN_ENGINE = {
+  version: MP_VERSION,
+  // The `+esm` form is the most reliable for buildless ESM.
+  module: `${MP_CDN}/+esm`,
+  wasm: `${MP_CDN}/wasm`,
+  // Face landmark model (468 face + 10 iris landmarks). ~3.8 MB.
+  model: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+};
+
+const VENDOR_ENGINE = OVERRIDES.mediapipeVendorBase
   ? {
       version: MP_VERSION,
       module: `${OVERRIDES.mediapipeVendorBase}/tasks-vision/vision_bundle.mjs`,
       wasm: `${OVERRIDES.mediapipeVendorBase}/tasks-vision/wasm`,
       model: `${OVERRIDES.mediapipeVendorBase}/face_landmarker.task`,
     }
-  : {
-      version: MP_VERSION,
-      // The `+esm` form is the most reliable for buildless ESM.
-      module: `${MP_CDN}/+esm`,
-      wasm: `${MP_CDN}/wasm`,
-      // Face landmark model (468 face + 10 iris landmarks). ~3.8 MB.
-      model:
-        'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-    };
+  : null;
+
+// Use the bundled (offline) engine when present, else the CDN.
+export const MEDIAPIPE = VENDOR_ENGINE || CDN_ENGINE;
+// If the bundled engine fails to load at runtime, fall back to the CDN.
+export const MEDIAPIPE_FALLBACK = VENDOR_ENGINE ? CDN_ENGINE : null;
 
 // True when running inside the Electron desktop build.
 export const IS_ELECTRON = !!OVERRIDES.electron;

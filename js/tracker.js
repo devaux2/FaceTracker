@@ -9,20 +9,31 @@
 // Landmarks are stored interleaved as x,y,z (stride 3) so the renderer can use
 // depth for occlusion.
 
-import { MEDIAPIPE, LM } from './config.js';
+import { MEDIAPIPE, MEDIAPIPE_FALLBACK, LM } from './config.js';
 
-export async function loadFaceLandmarker({ numFaces = 5, delegate = 'GPU' } = {}) {
-  const vision = await import(/* @vite-ignore */ MEDIAPIPE.module);
+async function createWith(cfg, numFaces, delegate) {
+  const vision = await import(/* @vite-ignore */ cfg.module);
   const { FaceLandmarker, FilesetResolver } = vision;
-  const fileset = await FilesetResolver.forVisionTasks(MEDIAPIPE.wasm);
-  const landmarker = await FaceLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: MEDIAPIPE.model, delegate },
+  const fileset = await FilesetResolver.forVisionTasks(cfg.wasm);
+  return FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: cfg.model, delegate },
     runningMode: 'VIDEO',
     numFaces,
     outputFaceBlendshapes: false,
     outputFacialTransformationMatrixes: false,
   });
-  return landmarker;
+}
+
+export async function loadFaceLandmarker({ numFaces = 5, delegate = 'GPU' } = {}) {
+  try {
+    return await createWith(MEDIAPIPE, numFaces, delegate);
+  } catch (e) {
+    if (MEDIAPIPE_FALLBACK) {
+      console.warn('Bundled face engine failed to load; falling back to CDN.', e);
+      return await createWith(MEDIAPIPE_FALLBACK, numFaces, delegate);
+    }
+    throw e;
+  }
 }
 
 const CENTROID_PTS = [LM.noseTip, LM.leftEyeOuter, LM.rightEyeOuter];
