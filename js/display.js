@@ -54,6 +54,7 @@ let paints = [];
 let stickers = [];
 let paintsById = new Map();
 const paintAssign = new Map(); // trackId -> paintId (randomPerFace mode)
+const loadedTexVersions = new Map(); // id -> updatedAt last decoded (skip needless re-decodes)
 
 let running = false;
 let lastTs = 0;
@@ -79,16 +80,23 @@ async function decodeTo(rec, id) {
   }
 }
 
+async function decodeIfChanged(rec) {
+  const v = rec.updatedAt || 0;
+  if (loadedTexVersions.get(rec.id) === v) return; // image unchanged (e.g. a name/fit edit)
+  await decodeTo(rec, rec.id);
+  loadedTexVersions.set(rec.id, v);
+}
+
 async function loadPaints() {
   paints = await getAll(STORES.paints);
   paintsById = new Map(paints.map((p) => [p.id, p]));
-  for (const p of paints) await decodeTo(p, p.id);
+  for (const p of paints) await decodeIfChanged(p);
   syncTextures();
 }
 
 async function loadStickers() {
   stickers = await getAll(STORES.stickers);
-  for (const s of stickers) await decodeTo(s, s.id);
+  for (const s of stickers) await decodeIfChanged(s);
   syncTextures();
 }
 
@@ -223,11 +231,12 @@ function frame() {
       tracks: active,
       mapper,
       paintFor,
+      getFit: (pid) => paintsById.get(pid)?.fit,
       opacity: settings.paintOpacity,
       stickers,
       meshDebug: settings.meshDebug,
       occlusion: settings.occlusion !== false,
-      edgeFeather: settings.edgeFeather ?? 0.6,
+      edgeFeather: settings.edgeFeather ?? 0.45,
     });
 
     // FPS

@@ -105,6 +105,10 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16
 .checker { background-image: linear-gradient(45deg, #2a2c3a 25%, transparent 25%), linear-gradient(-45deg, #2a2c3a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2c3a 75%), linear-gradient(-45deg, transparent 75%, #2a2c3a 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-color: #14151c; }
 .name { margin-top: 8px; }
 .empty { color: var(--muted); grid-column: 1 / -1; }
+.fit { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.fit summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 700; list-style: revert; }
+.fit .field { margin: 8px 0; }
+.fit .field-label { font-size: 12px; }
 
 .ov-preview { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #05060a url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="none" stroke="%23ffffff10"/></svg>'); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 8px 0 16px; }
 .ov-preview-inner { position: absolute; inset: 0; }

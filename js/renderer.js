@@ -18,10 +18,17 @@ const VERT_TEX = `
 attribute vec3 a_pos;
 attribute vec2 a_uv;
 attribute float a_edge;
+uniform vec2 u_uvScale;   // >1 = paint larger on the face
+uniform vec2 u_uvOffset;  // shift the paint across the face
+uniform float u_uvRot;    // radians
 varying vec2 v_uv;
 varying float v_edge;
 void main() {
-  v_uv = a_uv;
+  vec2 p = a_uv - 0.5;
+  float cs = cos(u_uvRot), sn = sin(u_uvRot);
+  p = vec2(cs * p.x - sn * p.y, sn * p.x + cs * p.y);
+  p = p / u_uvScale;
+  v_uv = p + 0.5 - u_uvOffset;
   v_edge = a_edge;
   gl_Position = vec4(a_pos, 1.0);
 }`;
@@ -166,6 +173,9 @@ export function createRenderer(canvas) {
       sampler: gl.getUniformLocation(texProg, 'u_tex'),
       alpha: gl.getUniformLocation(texProg, 'u_alpha'),
       feather: gl.getUniformLocation(texProg, 'u_feather'),
+      uvScale: gl.getUniformLocation(texProg, 'u_uvScale'),
+      uvOffset: gl.getUniformLocation(texProg, 'u_uvOffset'),
+      uvRot: gl.getUniformLocation(texProg, 'u_uvRot'),
     },
     flat: { pos: gl.getAttribLocation(flatProg, 'a_pos'), color: gl.getUniformLocation(flatProg, 'u_color') },
   };
@@ -259,12 +269,16 @@ export function createRenderer(canvas) {
     gl.vertexAttribPointer(loc.tex.edge, 1, gl.FLOAT, false, 0, 0);
   }
 
-  function drawFaceTexture(track, mapper, texId, alpha, feather) {
+  function drawFaceTexture(track, mapper, texId, alpha, feather, fit) {
     const rec = textures.get(texId);
     if (!rec) return;
     mapper.toClipInto(track.lm, posScratch, LANDMARK_COUNT);
 
     gl.useProgram(texProg);
+    const sc = fit && fit.scale ? fit.scale : 1;
+    gl.uniform2f(loc.tex.uvScale, sc, sc);
+    gl.uniform2f(loc.tex.uvOffset, (fit && fit.ox) || 0, (fit && fit.oy) || 0);
+    gl.uniform1f(loc.tex.uvRot, (((fit && fit.rot) || 0) * Math.PI) / 180);
     bindMeshAttribs();
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, rec.tex);
@@ -325,6 +339,10 @@ export function createRenderer(canvas) {
     }
 
     gl.useProgram(texProg);
+    // Stickers share the paint shader — reset the per-paint UV transform.
+    gl.uniform2f(loc.tex.uvScale, 1, 1);
+    gl.uniform2f(loc.tex.uvOffset, 0, 0);
+    gl.uniform1f(loc.tex.uvRot, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, quadPosBuf);
     gl.bufferData(gl.ARRAY_BUFFER, quadScratch, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(loc.tex.pos);
@@ -344,7 +362,7 @@ export function createRenderer(canvas) {
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
   }
 
-  function render({ tracks, mapper, paintFor, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edgeFeather = 0.6 }) {
+  function render({ tracks, mapper, paintFor, getFit, opacity = 1, stickers = [], meshDebug = false, occlusion = true, edgeFeather = 0.45 }) {
     beginFrame();
 
     // Pass 1: warped face paint. Depth-test gives real self/turn occlusion
@@ -359,7 +377,7 @@ export function createRenderer(canvas) {
       }
       for (const track of tracks) {
         const pid = paintFor ? paintFor(track) : null;
-        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edgeFeather);
+        if (pid && textures.has(pid)) drawFaceTexture(track, mapper, pid, opacity, edgeFeather, getFit ? getFit(pid) : null);
       }
     }
 

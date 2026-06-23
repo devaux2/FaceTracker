@@ -50,13 +50,21 @@ async function patchSettings(patch) {
   bus.changed(STORES.settings);
 }
 async function savePaint(rec) {
-  await store.put(STORES.paints, { ...rec, updatedAt: Date.now() });
+  // Keep updatedAt (only changes when the image changes) so the display doesn't
+  // re-decode the texture for name/fit edits.
+  await store.put(STORES.paints, rec);
   bus.changed(STORES.paints);
   await refresh();
 }
 async function saveSticker(rec) {
-  await store.put(STORES.stickers, { ...rec, updatedAt: Date.now() });
+  await store.put(STORES.stickers, rec);
   bus.changed(STORES.stickers);
+}
+
+const DEFAULT_FIT = { ox: 0, oy: 0, scale: 1, rot: 0 };
+async function savePaintFit(p) {
+  await store.put(STORES.paints, p);
+  bus.changed(STORES.paints);
 }
 async function saveOverlay(rec) {
   await store.put(STORES.overlays, { ...rec, updatedAt: Date.now() });
@@ -126,6 +134,21 @@ function paintCard(p) {
         'In rotation',
       ]);
 
+  const fit = { ...DEFAULT_FIT, ...(p.fit || {}) };
+  const updFit = (patch) => {
+    Object.assign(fit, patch);
+    p.fit = { ...fit };
+    savePaintFit(p);
+  };
+  const fitUI = el('details', { class: 'fit' }, [
+    el('summary', {}, 'Adjust fit'),
+    field('Offset X', slider(fit.ox, -0.2, 0.2, 0.005, (v) => updFit({ ox: v }))),
+    field('Offset Y', slider(fit.oy, -0.2, 0.2, 0.005, (v) => updFit({ oy: v }))),
+    field('Scale', slider(fit.scale, 0.7, 1.4, 0.01, (v) => updFit({ scale: v }))),
+    field('Rotate', slider(fit.rot, -25, 25, 0.5, (v) => updFit({ rot: v }))),
+    el('button', { class: 'btn ghost sm', onclick: () => { p.fit = { ...DEFAULT_FIT }; savePaintFit(p); render(); } }, 'Reset fit'),
+  ]);
+
   return el('div', { class: 'card' + (isSingle && active ? ' card-active' : '') }, [
     el('div', { class: 'thumb checker' }, el('img', { src: thumbUrl(p.blob) })),
     el('input', {
@@ -134,6 +157,7 @@ function paintCard(p) {
       onchange: (e) => savePaint({ ...p, name: e.target.value }),
     }),
     el('div', { class: 'card-row' }, [select, el('button', { class: 'btn danger sm', onclick: () => deletePaint(p) }, 'Delete')]),
+    fitUI,
   ]);
 }
 
